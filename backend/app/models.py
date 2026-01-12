@@ -22,6 +22,7 @@ class FileLink(BaseModel):
     type: str
     name: str
     url: str
+    created_at: Optional[str] = None
 
 
 class RequestResult(BaseModel):
@@ -40,8 +41,29 @@ class RequestResult(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    conversation_id: str
     request_payload: List[Dict[str, Any]]
     results: List[RequestResult]
     summary: Dict[str, Any]
     files: List[FileLink]
     llm_message: str
+
+
+class MessageRecord(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: str
+
+
+class ConversationSummary(BaseModel):
+    id: str
+    created_at: str
+
+
+class ConversationDetail(BaseModel):
+    id: str
+    created_at: str
+    request_payload: List[Dict[str, Any]]
+    messages: List[MessageRecord]
+    files: List[FileLink]

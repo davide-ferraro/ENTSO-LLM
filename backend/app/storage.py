@@ -1,71 +1,112 @@
-"""File registry for generated ENTSO-E outputs."""
+"""Storage backends and file registry helpers."""
 
 from __future__ import annotations
 
-import json
+import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import uuid4
+
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
 
 STORAGE_ROOT = Path(__file__).resolve().parents[1] / "storage"
 RESULTS_DIR = STORAGE_ROOT / "results"
-INDEX_PATH = STORAGE_ROOT / "index.json"
+
+
+@dataclass
+class StoredFile:
+    storage_key: str
+    local_path: Optional[Path]
+
+
+class StorageBackend:
+    """Base interface for storage backends."""
+
+    def store_file(self, local_path: Path) -> StoredFile:
+        raise NotImplementedError
+
+    def get_file_response(self, stored_file: StoredFile, filename: str) -> Response:
+        raise NotImplementedError
+
+
+class LocalStorageBackend(StorageBackend):
+    """Local filesystem storage (default)."""
+
+    def store_file(self, local_path: Path) -> StoredFile:
+        return StoredFile(storage_key=str(local_path), local_path=local_path)
+
+    def get_file_response(self, stored_file: StoredFile, filename: str) -> Response:
+        if not stored_file.local_path:
+            raise FileNotFoundError("Local path not available")
+        return FileResponse(stored_file.local_path, filename=filename)
+
+
+class S3StorageBackend(StorageBackend):
+    """Amazon S3 storage backend using boto3."""
+
+    def __init__(self, bucket: str, prefix: str = "", region: Optional[str] = None) -> None:
+        import boto3
+
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+        self.client = boto3.client("s3", region_name=region) if region else boto3.client("s3")
+
+    def store_file(self, local_path: Path) -> StoredFile:
+        key_prefix = f"{self.prefix}/" if self.prefix else ""
+        storage_key = f"{key_prefix}{uuid4().hex}_{local_path.name}"
+        self.client.upload_file(str(local_path), self.bucket, storage_key)
+        return StoredFile(storage_key=storage_key, local_path=local_path)
+
+    def get_file_response(self, stored_file: StoredFile, filename: str) -> Response:
+        url = self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": stored_file.storage_key, "ResponseContentDisposition": f"attachment; filename={filename}"},
+            ExpiresIn=3600,
+        )
+        return RedirectResponse(url)
 
 
 def ensure_storage() -> None:
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
-    if not INDEX_PATH.exists():
-        INDEX_PATH.write_text(json.dumps({"files": {}}, indent=2), encoding="utf-8")
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_index() -> Dict[str, Dict[str, str]]:
+def get_storage_backend() -> StorageBackend:
+    backend = os.getenv("ENTSO_STORAGE_BACKEND", "local").lower()
+    if backend == "s3":
+        bucket = os.getenv("ENTSO_S3_BUCKET")
+        if not bucket:
+            raise RuntimeError("ENTSO_S3_BUCKET is required for s3 storage backend.")
+        prefix = os.getenv("ENTSO_S3_PREFIX", "")
+        region = os.getenv("ENTSO_S3_REGION")
+        return S3StorageBackend(bucket=bucket, prefix=prefix, region=region)
+    return LocalStorageBackend()
+
+
+def register_files(
+    files: List[Dict[str, str]],
+    storage_backend: StorageBackend,
+    conversation_id: str,
+) -> List[Dict[str, str]]:
     ensure_storage()
-    return json.loads(INDEX_PATH.read_text(encoding="utf-8"))
-
-
-def save_index(index: Dict[str, Dict[str, str]]) -> None:
-    INDEX_PATH.write_text(json.dumps(index, indent=2), encoding="utf-8")
-
-
-def register_files(files: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    ensure_storage()
-    index = load_index()
-    registry = index.setdefault("files", {})
     output: List[Dict[str, str]] = []
 
     for entry in files:
         path = Path(entry["path"]).resolve()
-        if not path.exists():
+        if not path.exists() or not path.is_file():
             continue
-        try:
-            if not path.is_relative_to(RESULTS_DIR):
-                continue
-        except AttributeError:
-            if str(RESULTS_DIR) not in str(path):
-                continue
 
-        file_id = uuid4().hex
-        registry[file_id] = {
-            "path": str(path),
-            "type": entry.get("type", "file"),
-            "name": path.name,
-        }
+        stored = storage_backend.store_file(path)
         output.append(
             {
-                "id": file_id,
                 "type": entry.get("type", "file"),
                 "name": path.name,
-                "url": f"/files/{file_id}",
-                "path": str(path),
+                "storage_key": stored.storage_key,
+                "local_path": str(stored.local_path) if stored.local_path else None,
+                "conversation_id": conversation_id,
             }
         )
 
-    save_index(index)
     return output
-
-
-def resolve_file(file_id: str) -> Dict[str, str] | None:
-    index = load_index()
-    return index.get("files", {}).get(file_id)
