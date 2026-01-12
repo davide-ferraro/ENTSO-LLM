@@ -2,74 +2,31 @@
 
 from __future__ import annotations
 
-import json
 import os
-from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import requests
 
-from backend.app.prompts import load_system_prompt
+from backend.app.llm_context import build_context
+from backend.app.llm_utils import LLMError, LLMResponse, extract_json, parse_requests
+from backend.app.llm_open_source import generate_requests as generate_requests_open_source
 
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODEL = "gpt-4o-mini"
 
 
-@dataclass(frozen=True)
-class LLMResponse:
-    requests: List[Dict[str, Any]]
-    raw_message: str
-
-
-class LLMError(RuntimeError):
-    """Raised when the LLM fails to produce valid requests."""
-
-
-def _parse_requests(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    if "requests" in payload:
-        requests_list = payload.get("requests")
-    elif "request" in payload:
-        requests_list = [payload.get("request")]
-    elif "params" in payload:
-        requests_list = [
-            {
-                "name": payload.get("name", "request"),
-                "params": payload.get("params"),
-            }
-        ]
-    else:
-        raise LLMError("LLM response must include 'requests', 'request', or 'params'.")
-
-    if not isinstance(requests_list, list) or not requests_list:
-        raise LLMError("LLM response 'requests' must be a non-empty list.")
-
-    normalized: List[Dict[str, Any]] = []
-    for item in requests_list:
-        if not isinstance(item, dict):
-            raise LLMError("Each request entry must be a JSON object.")
-        params = item.get("params")
-        if not isinstance(params, dict):
-            raise LLMError("Each request entry must include a 'params' object.")
-        normalized.append({"name": item.get("name", "request"), "params": params})
-
-    return normalized
-
-
-def _extract_json(content: str) -> Dict[str, Any]:
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise LLMError(f"LLM response was not valid JSON: {exc}") from exc
-
-
 def generate_requests(message: str, history: List[Dict[str, str]] | None = None) -> LLMResponse:
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    if provider in {"oss", "open-source", "open_source", "open"}:
+        return generate_requests_open_source(message, history=history)
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise LLMError("OPENAI_API_KEY is not set.")
 
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-    system_prompt = load_system_prompt()
+    system_prompt = build_context(message, history)
 
     messages = [{"role": "system", "content": system_prompt}]
     if history:
@@ -93,7 +50,7 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
 
     data = response.json()
     content = data["choices"][0]["message"]["content"]
-    parsed = _extract_json(content)
-    requests_list = _parse_requests(parsed)
+    parsed = extract_json(content)
+    requests_list = parse_requests(parsed)
 
     return LLMResponse(requests=requests_list, raw_message=content)
