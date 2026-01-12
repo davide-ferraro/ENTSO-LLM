@@ -9,7 +9,7 @@ ENTSO-LLM is a tool that lets you retrieve data from the [ENTSO-E Transparency P
 ## ✨ Features
 
 - **Natural Language Requests**: Ask for data in plain English
-- **Local & Scheduled Fetching**: One-time requests or Modal cron jobs
+- **Local & Modal API Fetching**: One-time requests or on-demand Modal API runs
 - **Historical Data**: Automatic 20-year data collection
 - **Comprehensive Documentation**: 3,700+ lines of API documentation for LLM context
 - **260 Working Examples**: Pre-tested request patterns across all 65 endpoints
@@ -83,9 +83,9 @@ python -m src.local
 
 ---
 
-## ⏰ Scheduled Fetching with Modal
+## ⚡ On-Demand Modal API
 
-ENTSO-LLM supports **scheduled data collection** using [Modal](https://modal.com/) cron jobs.
+ENTSO-LLM supports **on-demand data collection** using a Modal-hosted HTTP API.
 
 ### Setup Modal
 
@@ -100,49 +100,34 @@ modal token new
 modal secret create ENTSOE_API_KEY ENTSOE_API_KEY=your_key_here
 ```
 
-### Create a Cron Job
-
-Ask the LLM to create a scheduled request:
-> "Set up a cron job to collect load data in Germany every 2 hours"
-
-The LLM will generate:
-```json
-{
-    "name": "load_germany_operational",
-    "run": "modal",
-    "schedule": "0 */2 * * *",
-    "params": {
-        "documentType": "A65",
-        "processType": "A16",
-        "outBiddingZone_Domain": "10Y1001A1001A82H"
-    }
-}
-```
-
-### Deploy (one time only!)
+### Deploy the API (one time only!)
 
 ```bash
-modal deploy src/modal_runner.py
+modal deploy src/modal_api.py
+```
+
+Modal will print the HTTPS endpoint URL. Use it to trigger requests on-demand:
+
+```bash
+curl -X POST "<YOUR_MODAL_ENDPOINT>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "load_germany_operational",
+    "params": {
+      "documentType": "A65",
+      "processType": "A16",
+      "outBiddingZone_Domain": "10Y1001A1001A82H",
+      "periodStart": "202601010000",
+      "periodEnd": "202601080000"
+    }
+  }'
 ```
 
 ### What Happens
 
-1. **First run**: Automatically fetches 20 years of historical data
-2. **Every 2 hours**: Fetches recent data and **appends** to existing JSON/CSV files
-3. **Storage**: Data saved to `entsoe-fetch` Modal volume
-
-### Adding New Requests (No Redeploy Needed!)
-
-Once deployed, you only need to **sync** when adding new requests:
-
-```bash
-# Add your new request to my_requests.json, then:
-modal run src/modal_runner.py::main
-```
-
-This uploads your local `my_requests.json` to the Modal volume. The cron job will automatically pick up the new requests on its next run.
-
-> **You only need to redeploy** if you change the **code** in `src/modal_runner.py`. Never for adding/removing requests.
+1. **On-demand run**: The API fetches data when the HTTP request arrives
+2. **Storage**: Data saved to the `entsoe-fetch` Modal volume (same structure as `results/`)
+3. **No scheduling**: Use your chat/LLM workflow to decide when to call the endpoint
 
 ---
 
@@ -153,8 +138,10 @@ ENTSO-LLM/
 ├── src/                        # Python source code
 │   ├── __init__.py             # Package initialization
 │   ├── local.py                # Local execution script
-│   ├── modal_runner.py         # Modal cron job script
+│   ├── modal_api.py            # Modal on-demand API service
 │   └── parser.py               # XML to JSON/CSV parser
+├── archived/
+│   └── modal_runner.py         # Archived Modal cron job script
 │
 ├── docs/                       # Documentation for LLM context
 │   ├── api/                    # Technical API documentation
@@ -210,27 +197,16 @@ ENTSO-LLM/
 }
 ```
 
-### Modal Cron Job
+### Modal API Payload
 ```json
 {
-    "name": "descriptive_name_operational",
-    "run": "modal",
-    "schedule": "0 */2 * * *",
+    "name": "descriptive_name",
     "params": {
         "documentType": "A65",
         ...
     }
 }
 ```
-
-### Cron Schedule Reference
-
-| Schedule | Expression |
-|----------|------------|
-| Every hour | `0 * * * *` |
-| Every 2 hours | `0 */2 * * *` |
-| Every 6 hours | `0 */6 * * *` |
-| Daily at midnight | `0 0 * * *` |
 
 ---
 
@@ -259,7 +235,7 @@ The `docs/` folder contains comprehensive documentation:
                                               │                     │
                                     ┌─────────▼─────────┐ ┌─────────▼─────────┐
                                     │  python -m        │ │  modal deploy     │
-                                    │  src.local        │ │  src/modal_runner │
+                                    │  src.local        │ │  src/modal_api    │
                                     └─────────┬─────────┘ └─────────┬─────────┘
                                               │                     │
                                     ┌─────────▼─────────┐ ┌─────────▼─────────┐
@@ -287,7 +263,7 @@ MIT License - see LICENSE file
 ## 🙏 Acknowledgments
 
 - [ENTSO-E](https://www.entsoe.eu/) for providing the Transparency Platform
-- [Modal](https://modal.com/) for serverless scheduling
+- [Modal](https://modal.com/) for serverless API runtime
 - Data provided under EU Regulation 543/2013
 
 ---

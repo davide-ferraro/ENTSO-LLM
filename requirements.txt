@@ -9,7 +9,6 @@ python-dotenv>=1.0.0
 # XML parsing (included in Python stdlib, but listed for clarity)
 # xml.etree.ElementTree - stdlib
 
-# Modal (optional - for scheduled fetching/cron jobs)
+# Modal (optional - for on-demand API hosting)
 # Install with: pip install modal
 # modal>=0.55.0
-

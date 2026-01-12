@@ -48,7 +48,7 @@ def load_requests() -> List[Dict[str, Any]]:
     Load LOCAL requests from my_requests.json file.
 
     Filters for requests with 'run': 'local' or no 'run' field.
-    Requests with 'run': 'modal' are skipped (handled by modal_runner.py).
+    Requests with 'run': 'modal' are skipped (handled by the Modal API service).
 
     Returns:
         List of request definitions with 'name' and 'params'

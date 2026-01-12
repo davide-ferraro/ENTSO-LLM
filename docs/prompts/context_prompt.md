@@ -294,112 +294,88 @@ timestamp,Solar_MAW,WindOnshore_MAW,FossilGas_MAW,Nuclear_MAW
 
 ---
 
-## ⏰ Modal Cron Jobs (Scheduled Fetching)
+## ⚡ Modal On-Demand API
 
-The system supports **scheduled data fetching** using Modal cron jobs. This is useful for continuous monitoring of electricity data.
+The system supports **on-demand data fetching** using a Modal-hosted HTTP API. Use this when you want the LLM or chat client to trigger runs directly.
 
 ### How It Works
 
-1. **First run**: System automatically fetches 20 years of historical data
-2. **Subsequent runs**: Fetches only recent data and appends to existing files
-3. **Storage**: Data stored in Modal volume (same structure as local `results/`)
+1. **Deploy once**: `modal deploy src/modal_api.py` creates an HTTPS endpoint
+2. **On-demand runs**: Each HTTP request triggers a fetch
+3. **Storage**: Data stored in the Modal volume (same structure as local `results/`)
 
-### Request Format for Modal
+### Request Format for Modal API
 
-Add `"run": "modal"` and `"schedule"` to your request:
+Send a JSON payload to the Modal endpoint:
 
 ```json
 {
     "name": "load_germany_operational",
-    "run": "modal",
-    "schedule": "0 */2 * * *",
     "params": {
         "documentType": "A65",
         "processType": "A16",
-        "outBiddingZone_Domain": "10Y1001A1001A82H"
+        "outBiddingZone_Domain": "10Y1001A1001A82H",
+        "periodStart": "202601010000",
+        "periodEnd": "202601080000"
     }
 }
 ```
 
-**Note**: For Modal requests, `periodStart` and `periodEnd` are calculated automatically:
-- Historical: 20 years back from now
-- Operational: Last few hours with 1-hour overlap for safety
-
-### Cron Expression Reference
-
-| Schedule | Cron Expression |
-|----------|-----------------|
-| Every hour | `0 * * * *` |
-| Every 2 hours | `0 */2 * * *` |
-| Every 6 hours | `0 */6 * * *` |
-| Daily at midnight | `0 0 * * *` |
-| Every 15 minutes | `*/15 * * * *` |
-
-### LLM Workflow for Modal Requests
-
-When user asks for a Modal cron job:
-
-1. **Check prerequisites**: Ask if Modal CLI is installed and authenticated
-2. **Ask if already deployed**: "Is Modal already deployed, or is this the first time?"
-3. **Clarify schedule**: Convert "every 2 hours" → `0 */2 * * *`
-4. **Offer historical**: Ask if user wants historical data collected first
-5. **Generate request**: Create entry with `run: "modal"` and `schedule`
-6. **Give correct command**:
-   - If first time: `modal deploy src/modal_runner.py`
-   - If already deployed: `modal run src/modal_runner.py::main` (just syncs!)
-
-### Example Modal Request Workflow
-
-**User**: "Create a cron job that collects load data in Germany every 2 hours"
-
-**Your Response**:
-
-Before setting up the Modal cron job, please confirm:
-1. Is Modal CLI installed? (`pip install modal`)
-2. Is Modal authenticated? (`modal token new`)
-3. Is the secret set up? (`modal secret create ENTSOE_API_KEY ENTSOE_API_KEY=<your_key>`)
-4. **Is Modal already deployed?** (Have you run `modal deploy src/modal_runner.py` before?)
-
-Would you also like to collect 20 years of historical data first? (The system will do this automatically on first run)
-
-*After confirmation:*
-
-I've added this request to `my_requests.json`:
+You can also send a batch:
 
 ```json
 {
-    "name": "load_germany_operational",
-    "run": "modal",
-    "schedule": "0 */2 * * *",
+    "requests": [
+        { "name": "request_one", "params": { "...": "..." } },
+        { "name": "request_two", "params": { "...": "..." } }
+    ]
+}
+```
+
+### LLM Workflow for Modal API Requests
+
+When user asks for Modal execution:
+
+1. **Check prerequisites**: Ask if Modal CLI is installed and authenticated
+2. **Ask if already deployed**: "Is the Modal API already deployed, or is this the first time?"
+3. **Generate payload**: Build the JSON payload (no cron schedule)
+4. **Give the correct command**:
+   - If first time: `modal deploy src/modal_api.py`
+   - If already deployed: provide a `curl` POST example to the endpoint URL
+
+### Example Modal API Workflow
+
+**User**: "Run an on-demand fetch for solar generation in Spain via Modal"
+
+**Your Response**:
+
+Before using the Modal API, please confirm:
+1. Is Modal CLI installed? (`pip install modal`)
+2. Is Modal authenticated? (`modal token new`)
+3. Is the secret set up? (`modal secret create ENTSOE_API_KEY ENTSOE_API_KEY=<your_key>`)
+4. **Is the Modal API already deployed?** (Have you run `modal deploy src/modal_api.py` before?)
+
+*After confirmation:*
+
+Use this payload:
+
+```json
+{
+    "name": "generation_solar_spain_on_demand",
     "params": {
-        "documentType": "A65",
+        "documentType": "A75",
         "processType": "A16",
-        "outBiddingZone_Domain": "10Y1001A1001A82H"
+        "psrType": "B16",
+        "in_Domain": "10YES-REE------0",
+        "periodStart": "202601010000",
+        "periodEnd": "202601080000"
     }
 }
 ```
 
 **To run:**
-- If this is your **first time**: `modal deploy src/modal_runner.py`
-- If Modal is **already deployed**: `modal run src/modal_runner.py::main` (just syncs the new request, no redeploy needed!)
-
-This will:
-1. First run: Fetch 20 years of historical load data for Germany
-2. Every 2 hours: Fetch recent data and append to the historical JSON/CSV files
-3. Store all data in the `entsoe-fetch` Modal volume
-
-### ⚠️ Important: Sync vs Deploy
-
-**Deploy** (`modal deploy src/modal_runner.py`): Only needed ONCE to set up the cron job in the cloud.
-
-**Sync** (`modal run src/modal_runner.py::main`): Needed whenever you add/modify requests in `my_requests.json`:
-1. Uploads your local `my_requests.json` to the Modal volume
-2. The cron job automatically picks up changes on its next run
-
-**ALWAYS tell users in your response**:
-- First time setting up Modal: `modal deploy src/modal_runner.py`
-- Adding new requests later: `modal run src/modal_runner.py::main` (just syncs, no redeploy needed!)
-- **Important**: Once deployed, you NEVER need to redeploy for new requests - just sync!
+- **If Modal not yet deployed:** `modal deploy src/modal_api.py` (one-time setup)
+- **If Modal already deployed:** POST the payload to the endpoint URL Modal provides.
 
 ---
 
@@ -499,39 +475,32 @@ This will retrieve actual wind onshore generation (B19) for Germany-Luxembourg b
 
 **Please run `python -m src.local` to fetch the data.**
 
-### Modal Cron Job Example
+### Modal API Example
 
-**User**: "Set up a cron job to collect solar generation in Spain every 6 hours"
+**User**: "Trigger a Modal API fetch for solar generation in Spain"
 
 **Your Response**:
 
-I've added this Modal cron job to `my_requests.json`:
+Use this payload:
 
 ```json
 {
-    "name": "generation_solar_spain_operational",
-    "run": "modal",
-    "schedule": "0 */6 * * *",
+    "name": "generation_solar_spain_on_demand",
     "params": {
         "documentType": "A75",
         "processType": "A16",
         "psrType": "B16",
-        "in_Domain": "10YES-REE------0"
+        "in_Domain": "10YES-REE------0",
+        "periodStart": "202601010000",
+        "periodEnd": "202601080000"
     }
 }
 ```
 
-This will:
-1. On first run: Collect 20 years of historical solar generation data
-2. Every 6 hours: Fetch recent data and append to existing files
-
 **To run:**
-- **If Modal not yet deployed:** `modal deploy src/modal_runner.py` (one-time setup)
-- **If Modal already deployed:** `modal run src/modal_runner.py::main` (just syncs the new request)
-
-> 💡 Once deployed, you never need to redeploy for new requests - just run `modal run src/modal_runner.py::main` to sync!
+- **If Modal not yet deployed:** `modal deploy src/modal_api.py`
+- **If Modal already deployed:** POST the payload to the endpoint URL Modal provides.
 
 ---
 
 *Remember: Always consult the documentation files before generating requests. Accuracy is critical - incorrect parameters will result in API errors or no data.*
-
