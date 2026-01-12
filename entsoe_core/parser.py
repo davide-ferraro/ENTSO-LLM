@@ -1120,10 +1120,10 @@ if __name__ == '__main__':
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python -m src.parser <xml_file> [json_output]")
+        print("Usage: python -m entsoe_core.parser <xml_file> [json_output]")
         print("\nExample:")
-        print("  python -m src.parser results/E11_v1_load_CZ_1day.xml")
-        print("  python -m src.parser results/E11_v1_load_CZ_1day.xml output.json")
+        print("  python -m entsoe_core.parser results/E11_v1_load_CZ_1day.xml")
+        print("  python -m entsoe_core.parser results/E11_v1_load_CZ_1day.xml output.json")
         sys.exit(1)
     
     xml_path = sys.argv[1]
@@ -1150,4 +1150,3 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"❌ Error parsing {xml_path}: {e}")
         sys.exit(1)
-

@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 
 import modal
 
-from src.entsoe_core import build_config, parse_results, run_request, setup_directories
+from entsoe_core import build_config, parse_results, run_request, setup_directories
 
 # =============================================================================
 # MODAL APP CONFIGURATION

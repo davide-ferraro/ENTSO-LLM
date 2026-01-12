@@ -10,7 +10,11 @@ import time
 
 import requests
 
-from src.parser import parse_entsoe_xml, parse_and_merge_xml_folder, parsed_to_csv
+from entsoe_core.parser import (
+    parse_and_merge_xml_folder,
+    parse_entsoe_xml,
+    parsed_to_csv,
+)
 
 BASE_URL = "https://web-api.tp.entsoe.eu/api"
 DEFAULT_REQUEST_TIMEOUT = 60
