@@ -1,0 +1,74 @@
+{
+    "_comment": "🤖 ENTSO-E API requests. Use 'run': 'local' for main_local.py, 'run': 'modal' + 'schedule' for Modal cron jobs.",
+    "_format": {
+        "name": "Unique request name",
+        "run": "local | modal (default: local)",
+        "schedule": "Cron expression for Modal (e.g., '0 */2 * * *' = every 2 hours)",
+        "params": "API parameters (documentType, processType, domain, etc.)"
+    },
+    "requests": [
+        {
+            "name": "imbalance_prices_finland_2weeks",
+            "run": "local",
+            "params": {
+                "documentType": "A85",
+                "controlArea_Domain": "10YFI-1--------U",
+                "periodStart": "202512260000",
+                "periodEnd": "202601090000"
+            }
+        },
+        {
+            "name": "imbalance_prices_finland_operational",
+            "run": "modal",
+            "schedule": "0 */3 * * *",
+            "params": {
+                "documentType": "A85",
+                "controlArea_Domain": "10YFI-1--------U"
+            }
+        },
+        {
+            "name": "generation_by_type_belgium_2weeks",
+            "run": "local",
+            "params": {
+                "documentType": "A75",
+                "processType": "A16",
+                "in_Domain": "10YBE----------2",
+                "periodStart": "202512260000",
+                "periodEnd": "202601090000"
+            }
+        },
+        {
+            "name": "outages_planned_france_1month",
+            "run": "local",
+            "params": {
+                "documentType": "A80",
+                "BiddingZone_Domain": "10YFR-RTE------C",
+                "businessType": "A53",
+                "periodStart": "202601090000",
+                "periodEnd": "202602090000"
+            }
+        },
+        {
+            "name": "ace_netherlands_current",
+            "run": "local",
+            "params": {
+                "documentType": "A86",
+                "businessType": "B33",
+                "Area_Domain": "10YNL----------L",
+                "periodStart": "202601080000",
+                "periodEnd": "202601090000"
+            }
+        },
+        {
+            "name": "schedules_norned_NO2_to_NL_1week",
+            "run": "local",
+            "params": {
+                "documentType": "A09",
+                "out_Domain": "10YNO-2--------T",
+                "in_Domain": "10YNL----------L",
+                "periodStart": "202601020000",
+                "periodEnd": "202601090000"
+            }
+        }
+    ]
+}
