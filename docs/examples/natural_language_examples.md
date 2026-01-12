@@ -17,10 +17,10 @@
 - I need all historical consumption data for Italy
 - Fetch the complete load history for the Netherlands
 
-**Modal (scheduled)**
-- Set up a cron job to monitor load in Germany every 2 hours
-- Track French electricity consumption every hour
-- Create a scheduled fetch for UK load data every 6 hours
+**Modal API (on-demand)**
+- Trigger a load fetch in Germany via the Modal API
+- Run an on-demand French electricity consumption fetch with Modal
+- Kick off a UK load data fetch through the Modal endpoint
 
 ---
 
@@ -37,10 +37,10 @@
 - I need 20 years of wind generation data for Germany
 - Fetch complete historical renewable generation for France
 
-**Modal (scheduled)**
-- Monitor solar generation in Spain every 2 hours
-- Set up hourly tracking of wind power in Germany
-- Create a cron job for offshore wind in Denmark every 6 hours
+**Modal API (on-demand)**
+- Trigger a solar generation fetch in Spain via Modal
+- Run an on-demand wind power fetch for Germany through Modal
+- Kick off an offshore wind fetch in Denmark with the Modal API
 
 ---
 
@@ -56,9 +56,9 @@
 - Get historical nuclear generation for France
 - I need all historical gas generation data for Germany
 
-**Modal (scheduled)**
-- Track nuclear output in France every hour
-- Monitor gas generation in Netherlands every 2 hours
+**Modal API (on-demand)**
+- Trigger a nuclear output fetch in France via Modal
+- Run an on-demand gas generation fetch for the Netherlands through Modal
 
 ---
 
@@ -75,10 +75,10 @@
 - I need 20 years of electricity price data for Spain
 - Fetch complete price history for France
 
-**Modal (scheduled)**
-- Monitor day-ahead prices in Germany every hour
-- Track electricity prices in France every 2 hours
-- Set up daily price monitoring for Spain
+**Modal API (on-demand)**
+- Trigger a day-ahead price fetch in Germany via Modal
+- Run an on-demand electricity price fetch for France through Modal
+- Kick off a price fetch for Spain using the Modal API
 
 ---
 
@@ -94,9 +94,9 @@
 - Get historical cross-border flows between France and Germany
 - I need 20 years of flow data for the Spain-France interconnector
 
-**Modal (scheduled)**
-- Monitor France-Germany flows every hour
-- Track Spain-Portugal exchanges every 2 hours
+**Modal API (on-demand)**
+- Trigger a France-Germany flow fetch via Modal
+- Run an on-demand Spain-Portugal exchange fetch through Modal
 
 ---
 
@@ -113,9 +113,9 @@
 - Get historical imbalance prices for Germany
 - I need all historical balancing data for the Netherlands
 
-**Modal (scheduled)**
-- Monitor imbalance prices in Germany every 15 minutes
-- Track ACE data for Netherlands every hour
+**Modal API (on-demand)**
+- Trigger an imbalance price fetch in Germany via Modal
+- Run an on-demand ACE fetch for the Netherlands through Modal
 
 ---
 
@@ -142,9 +142,9 @@
 - Fetch forced outages in Spain for the last month
 - Get offshore grid unavailability in the North Sea
 
-**Modal (scheduled)**
-- Monitor generation outages in Germany every 6 hours
-- Track transmission unavailability in France daily
+**Modal API (on-demand)**
+- Trigger a generation outage fetch in Germany via Modal
+- Run an on-demand transmission unavailability fetch for France through Modal
 
 ---
 
@@ -204,30 +204,11 @@
 
 ---
 
-## ⏰ Modal Cron Job Examples
+## ⚡ Modal API Examples
 
-### Every Hour
-- Monitor load in Germany every hour
-- Track day-ahead prices in France hourly
-- Set up hourly solar generation monitoring for Spain
-
-### Every 2 Hours
-- Create a cron job for wind generation in Germany every 2 hours
-- Monitor cross-border flows France-Germany every 2 hours
-- Track imbalance prices in Netherlands every 2 hours
-
-### Every 6 Hours
-- Set up 6-hourly monitoring of nuclear generation in France
-- Track total generation mix in Spain every 6 hours
-
-### Daily
-- Monitor generation outages in Germany once per day
-- Track daily capacity changes in Italy
-- Set up daily price summary collection for all Nordic zones
-
-### Every 15 Minutes
-- Track real-time ACE data for Germany every 15 minutes
-- Monitor balancing energy activation every 15 minutes
+- Trigger a load fetch in Germany with the Modal endpoint
+- Run a price fetch for France via the Modal API
+- Kick off a wind generation fetch in Spain through Modal
 
 ---
 

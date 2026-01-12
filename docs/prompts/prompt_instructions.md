@@ -20,14 +20,14 @@ You are my ENTSO-E API assistant. Before helping me, please read these documenta
 
 After reading, you'll help me by:
 - Creating JSON requests for `my_requests.json` in the "requests" field
-- Choosing between local (one-time) or Modal (scheduled) execution
+- Choosing between local (one-time) or Modal (on-demand API) execution
 - Explaining what data each request returns
-- Telling me the exact command to run
+- Telling me the exact command or HTTP call to run
 
-IMPORTANT for Modal requests:
-- Ask me if Modal is already deployed
-- If YES: tell me to run `modal run src/modal_runner.py::main` (just syncs, no redeploy needed)
-- If NO: tell me to run `modal deploy src/modal_runner.py` (first-time setup)
+IMPORTANT for Modal API requests:
+- Ask me if the Modal API is already deployed
+- If NO: tell me to run `modal deploy src/modal_api.py` (first-time setup)
+- If YES: tell me how to call the HTTP endpoint with a JSON payload
 
 Please read the docs now, then ask me what data I need.
 ```
@@ -42,7 +42,7 @@ Please read the docs now, then ask me what data I need.
 4. **Wait for confirmation** - it will say it's ready and ask what you need
 5. **Ask in plain English** - e.g., "Get me solar generation in Spain for last week"
 6. **Copy the JSON** it generates into `my_requests.json`
-7. **Run the command** it tells you (`python -m src.local` or `modal run/deploy`)
+7. **Run the command** it tells you (`python -m src.local` or a Modal API HTTP call)
 
 ---
 
@@ -56,9 +56,9 @@ After the LLM reads the docs, try asking:
 | "I need actual solar generation in Spain" | Local |
 | "Show me cross-border flows between Germany and Netherlands" | Local |
 | "Get historical load data for Germany" | Local (20 years) |
-| "Set up a cron job to collect load in Germany every 2 hours" | Modal |
-| "Monitor solar generation in Spain every 6 hours" | Modal |
-| "Track cross-border flows France↔Italy continuously" | Modal |
+| "Fetch load in Germany on-demand via Modal" | Modal API |
+| "Trigger a solar generation fetch in Spain through Modal" | Modal API |
+| "Run a cross-border flow fetch France↔Italy via the Modal API" | Modal API |
 
 ---
 
@@ -76,18 +76,18 @@ Your data will be saved to:
 - `results/json/` - Parsed JSON data
 - `results/csv/` - Tabular CSV data
 
-### For Modal Cron Jobs
+### For Modal API Requests
 ```bash
-modal deploy src/modal_runner.py
+modal deploy src/modal_api.py
 ```
 
-Your data will be saved to the `entsoe-fetch` Modal volume with the same structure.
+Modal will print the HTTPS endpoint URL. Your data will be saved to the `entsoe-fetch` Modal volume with the same structure.
 
 ---
 
-## ⚙️ Modal Setup (for Scheduled Fetching)
+## ⚙️ Modal Setup (for On-Demand API)
 
-Before using Modal cron jobs, you need to set up Modal:
+Before using the Modal-hosted API, you need to set up Modal:
 
 ### 1. Install Modal CLI
 ```bash
@@ -108,7 +108,7 @@ Replace `<your_api_key>` with your actual ENTSO-E API key.
 
 ### 4. Deploy (one time only!)
 ```bash
-modal deploy src/modal_runner.py
+modal deploy src/modal_api.py
 ```
 
 ### 5. Monitor
@@ -116,34 +116,15 @@ View logs and status at: https://modal.com/apps
 
 ---
 
-## 🔄 Adding New Modal Requests (No Redeploy Needed!)
+## 🔄 Calling the Modal API
 
-**Important:** Once you deploy `src/modal_runner.py`, you do NOT need to redeploy when adding new requests!
+**Important:** Once you deploy `src/modal_api.py`, you do NOT need to redeploy for new requests.
 
 ### Workflow:
 
-1. **Add new request** to `my_requests.json` with `"run": "modal"`
-2. **Sync to volume** by running:
-   ```bash
-   modal run src/modal_runner.py::main
-   ```
-   This uploads `my_requests.json` to the Modal volume AND runs it once.
-
-3. **Or just sync** (without running) using:
-   ```bash
-   modal run src/modal_runner.py::sync_requests
-   ```
-
-4. **The cron job** (already running in the cloud) will automatically pick up the new requests on its next scheduled run.
-
-### Why this works:
-- The deployed cron job reads requests from the Modal **volume** (cloud storage)
-- When you run `modal run src/modal_runner.py::main`, it syncs your local `my_requests.json` to the volume
-- The cron job doesn't need to be redeployed - it will see the updated requests
-
-### When DO you need to redeploy?
-- Only when you change the **code** in `src/modal_runner.py` (like modifying the schedule or logic)
-- Never for adding/removing requests in `my_requests.json`
+1. **Craft a request payload** (the LLM can provide this).
+2. **POST it** to the Modal endpoint URL (from `modal deploy`).
+3. **Repeat on-demand** whenever new chat requests arrive.
 
 ---
 
@@ -181,33 +162,19 @@ If the LLM generates incorrect requests:
 }
 ```
 
-### Modal Cron Job
+### Modal API Payload
 ```json
 {
-    "name": "descriptive_name_operational",
-    "run": "modal",
-    "schedule": "0 */2 * * *",
+    "name": "descriptive_name",
     "params": {
         "documentType": "A65",
         "processType": "A16",
-        "outBiddingZone_Domain": "10YFR-RTE------C"
+        "outBiddingZone_Domain": "10YFR-RTE------C",
+        "periodStart": "202601010000",
+        "periodEnd": "202601080000"
     }
 }
 ```
-
-**Note**: Modal requests don't need `periodStart`/`periodEnd` - they're calculated automatically.
-
----
-
-## ⏰ Cron Schedule Reference
-
-| Schedule | Expression |
-|----------|------------|
-| Every hour | `0 * * * *` |
-| Every 2 hours | `0 */2 * * *` |
-| Every 6 hours | `0 */6 * * *` |
-| Daily at midnight | `0 0 * * *` |
-| Every 15 minutes | `*/15 * * * *` |
 
 ---
 

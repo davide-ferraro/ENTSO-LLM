@@ -1,9 +1,8 @@
 {
-    "_comment": "🤖 ENTSO-E API requests. Use 'run': 'local' for main_local.py, 'run': 'modal' + 'schedule' for Modal cron jobs.",
+    "_comment": "🤖 ENTSO-E API requests. Use 'run': 'local' for local execution.",
     "_format": {
         "name": "Unique request name",
-        "run": "local | modal (default: local)",
-        "schedule": "Cron expression for Modal (e.g., '0 */2 * * *' = every 2 hours)",
+        "run": "local (default: local)",
         "params": "API parameters (documentType, processType, domain, etc.)"
     },
     "requests": [
@@ -15,15 +14,6 @@
                 "controlArea_Domain": "10YFI-1--------U",
                 "periodStart": "202512260000",
                 "periodEnd": "202601090000"
-            }
-        },
-        {
-            "name": "imbalance_prices_finland_operational",
-            "run": "modal",
-            "schedule": "0 */3 * * *",
-            "params": {
-                "documentType": "A85",
-                "controlArea_Domain": "10YFI-1--------U"
             }
         },
         {
