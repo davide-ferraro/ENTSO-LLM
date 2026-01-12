@@ -21,7 +21,7 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 
-from src.entsoe_core import (
+from entsoe_core import (
     build_config,
     run_request,
     parse_results,
