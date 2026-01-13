@@ -214,6 +214,8 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             else:
                 yield send_event("status", {"message": "Finding the right endpoint"})
                 await asyncio.sleep(0)
+            else:
+                yield send_event("status", {"message": "Finding the right endpoint"})
 
             if provider in {"oss", "open-source", "open_source", "open"}:
                 selected_endpoints = await asyncio.to_thread(router_pass_oss, request.message)
@@ -229,6 +231,9 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             await asyncio.sleep(0)
             yield send_event("status", {"message": "Writing the request"})
             await asyncio.sleep(0)
+
+            yield send_event("router", {"endpoints": selected_endpoints})
+            yield send_event("status", {"message": "Writing the request"})
 
             if provider in {"oss", "open-source", "open_source", "open"}:
                 requests_list, raw_message = await asyncio.to_thread(
@@ -249,6 +254,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             await asyncio.sleep(0)
             yield send_event("status", {"message": "Connecting to ENTSO-E APIs"})
             await asyncio.sleep(0)
+            yield send_event("status", {"message": "Connecting to ENTSO-E APIs"})
 
             execution = await asyncio.to_thread(run_requests, requests_list)
             payload = normalize_results(llm_response, execution)
@@ -271,6 +277,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/conversations", response_model=List[ConversationSummary])
