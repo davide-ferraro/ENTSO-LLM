@@ -35,6 +35,8 @@ def _resolve_endpoint(base_url: str) -> str:
 
 def _resolve_status_endpoint(base_url: str) -> str:
     normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat"):
+        normalized = normalized[: -len("/chat")]
     if normalized.endswith("/chat/completions"):
         normalized = normalized[: -len("/chat/completions")]
     if normalized.endswith("/v1"):
