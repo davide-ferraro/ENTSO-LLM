@@ -27,8 +27,54 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
 
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
 
-    selected_endpoints = router_pass(message)
-    requests_list, content = generator_pass(message, history, selected_endpoints)
+    router_context = build_router_context(message)
+    router_messages = [
+        {"role": "system", "content": router_context},
+        {"role": "user", "content": message},
+    ]
+
+    router_response = requests.post(
+        OPENAI_API_URL,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": model,
+            "messages": router_messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        },
+        timeout=120,
+    )
+
+    if router_response.status_code != 200:
+        raise LLMError(f"OpenAI API error: {router_response.status_code} {router_response.text}")
+
+    router_content = router_response.json()["choices"][0]["message"]["content"]
+    selected_endpoints = _parse_router_response(router_content)
+
+    generator_context = build_generator_context(message, selected_endpoints)
+    generator_messages = [{"role": "system", "content": generator_context}]
+    if history:
+        generator_messages.extend(history)
+    generator_messages.append({"role": "user", "content": message})
+
+    generator_response = requests.post(
+        OPENAI_API_URL,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": model,
+            "messages": generator_messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        },
+        timeout=120,
+    )
+    
+    if generator_response.status_code != 200:
+        raise LLMError(f"OpenAI API error: {generator_response.status_code} {generator_response.text}")
+
+    content = generator_response.json()["choices"][0]["message"]["content"]
+    parsed = extract_json(content)
+    requests_list = parse_requests(parsed)
 
     return LLMResponse(
         requests=requests_list,
@@ -52,73 +98,3 @@ def _parse_router_response(content: str) -> List[str]:
     if matches:
         return matches[:2]
     return ["E10"]
-
-
-def router_pass(message: str) -> List[str]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise LLMError("OPENAI_API_KEY is not set.")
-
-    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-
-    router_context = build_router_context(message)
-    router_messages = [
-        {"role": "system", "content": router_context},
-        {"role": "user", "content": message},
-    ]
-
-    router_response = requests.post(
-        OPENAI_API_URL,
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": model,
-            "messages": router_messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2,
-        },
-        timeout=120,
-    )
-
-    if router_response.status_code != 200:
-        raise LLMError(f"OpenAI API error: {router_response.status_code} {router_response.text}")
-
-    router_content = router_response.json()["choices"][0]["message"]["content"]
-    return _parse_router_response(router_content)
-
-
-def generator_pass(
-    message: str,
-    history: List[Dict[str, str]] | None,
-    selected_endpoints: List[str],
-) -> tuple[List[Dict[str, Any]], str]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise LLMError("OPENAI_API_KEY is not set.")
-
-    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-
-    generator_context = build_generator_context(message, selected_endpoints)
-    generator_messages = [{"role": "system", "content": generator_context}]
-    if history:
-        generator_messages.extend(history)
-    generator_messages.append({"role": "user", "content": message})
-
-    generator_response = requests.post(
-        OPENAI_API_URL,
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": model,
-            "messages": generator_messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2,
-        },
-        timeout=120,
-    )
-
-    if generator_response.status_code != 200:
-        raise LLMError(f"OpenAI API error: {generator_response.status_code} {generator_response.text}")
-
-    content = generator_response.json()["choices"][0]["message"]["content"]
-    parsed = extract_json(content)
-    requests_list = parse_requests(parsed)
-    return requests_list, content
