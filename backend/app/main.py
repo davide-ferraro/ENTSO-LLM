@@ -164,6 +164,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         def send_event(event: str, payload: Dict[str, Any]) -> str:
             return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
+
         def normalize_results(llm_response: Dict[str, Any], execution: Dict[str, Any]) -> Dict[str, Any]:
             conversation = create_conversation(llm_response["requests"])
             add_message(conversation.id, "user", request.message)
@@ -209,6 +210,10 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     "status",
                     {"message": f"Loading {model_name} for the first time"},
                 )
+                await asyncio.sleep(0)
+            else:
+                yield send_event("status", {"message": "Finding the right endpoint"})
+                await asyncio.sleep(0)
             else:
                 yield send_event("status", {"message": "Finding the right endpoint"})
 
@@ -220,6 +225,12 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             if not LLM_WARM:
                 LLM_WARM = True
                 yield send_event("status", {"message": "Finding the right endpoint"})
+                await asyncio.sleep(0)
+
+            yield send_event("router", {"endpoints": selected_endpoints})
+            await asyncio.sleep(0)
+            yield send_event("status", {"message": "Writing the request"})
+            await asyncio.sleep(0)
 
             yield send_event("router", {"endpoints": selected_endpoints})
             yield send_event("status", {"message": "Writing the request"})
@@ -240,11 +251,15 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             }
 
             yield send_event("request", {"request_payload": requests_list})
+            await asyncio.sleep(0)
+            yield send_event("status", {"message": "Connecting to ENTSO-E APIs"})
+            await asyncio.sleep(0)
             yield send_event("status", {"message": "Connecting to ENTSO-E APIs"})
 
             execution = await asyncio.to_thread(run_requests, requests_list)
             payload = normalize_results(llm_response, execution)
             yield send_event("results", payload)
+            await asyncio.sleep(0)
             yield send_event("done", {"message": "complete"})
         except LLMError as exc:
             yield send_event("error", {"detail": str(exc)})
@@ -253,6 +268,15 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         except Exception as exc:
             yield send_event("error", {"detail": str(exc)})
 
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 

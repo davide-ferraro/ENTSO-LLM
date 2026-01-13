@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useRef, useState } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
@@ -309,6 +310,8 @@ export default function HomePage() {
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [statusMessage, setStatusMessage] = useState("Ready for a new prompt.");
   const [error, setError] = useState<string | null>(null);
+  const statusEntryRef = useRef<string | null>(null);
+
   const statusTimersRef = useRef<number[]>([]);
   const statusRef = useRef(status);
   const statusEntryRef = useRef<string | null>(null);
@@ -327,6 +330,98 @@ export default function HomePage() {
     );
   };
 
+  const handleEvent = (event: string, data: Record<string, unknown>) => {
+    if (event === "status" && typeof data.message === "string") {
+      setStatusMessage(data.message);
+      updateStatusEntry(data.message);
+    }
+    if (event === "router" && Array.isArray(data.endpoints)) {
+      const routerEntry: ChatEntry = {
+        id: `${Date.now()}-router`,
+        role: "assistant",
+        content: "Router selected the following endpoint(s):",
+        kind: "router",
+        routerEndpoints: data.endpoints as string[],
+      };
+      setMessages((prev) => [...prev, routerEntry]);
+    }
+    if (event === "request" && Array.isArray(data.request_payload)) {
+      const requestPayload = data.request_payload as Array<Record<string, unknown>>;
+      const requestEntry: ChatEntry = {
+        id: `${Date.now()}-request`,
+        role: "assistant",
+        content: "Generated JSON request payload:",
+        kind: "request",
+        requestPayload,
+        codeLegend: buildCodeLegend(requestPayload),
+      };
+      setMessages((prev) => [...prev, requestEntry]);
+    }
+    if (event === "results" && typeof data === "object") {
+      const assistantEntry: ChatEntry = {
+        id: `${Date.now()}-assistant`,
+        role: "assistant",
+        content: "ENTSO-E requests executed. Review outputs below.",
+        results: data.results as RequestResult[],
+        summary: data.summary as Record<string, unknown>,
+        files: data.files as FileLink[],
+      };
+      setMessages((prev) => [...prev, assistantEntry]);
+      setStatus("idle");
+      setStatusMessage("Ready for a new prompt.");
+    }
+    if (event === "error" && typeof data.detail === "string") {
+      setStatus("error");
+      setError(data.detail);
+      setStatusMessage(data.detail);
+    }
+  };
+
+  const streamChat = async (payload: { message: string; history: Array<{ role: string; content: string }> }) => {
+    const response = await fetch(`${API_BASE}/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok || !response.body) {
+      const data = await response.json();
+      throw new Error(data.detail ?? "Chat request failed");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let currentEvent = "message";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (line.startsWith("event:")) {
+          currentEvent = line.replace("event:", "").trim();
+          continue;
+        }
+        if (line.startsWith("data:")) {
+          const raw = line.replace("data:", "").trim();
+          if (!raw) {
+            continue;
+          }
+          try {
+            const data = JSON.parse(raw) as Record<string, unknown>;
+            handleEvent(currentEvent, data);
+          } catch {
+            // Ignore malformed data payloads.
+          }
+        }
+      }
+    }
   const clearStatusTimers = () => {
     statusTimersRef.current.forEach((timer) => window.clearTimeout(timer));
     statusTimersRef.current = [];
@@ -370,6 +465,7 @@ export default function HomePage() {
     const statusEntry: ChatEntry = {
       id: `${Date.now()}-status`,
       role: "assistant",
+      content: "Starting request…",
       content: `Loading Qwen...${MODEL_NAME} for the first time`,
       kind: "status",
     };
@@ -384,6 +480,7 @@ export default function HomePage() {
       const history = messages
         .filter((entry) => entry.kind !== "status" && entry.kind !== "router" && entry.kind !== "request")
         .map((entry) => ({ role: entry.role, content: entry.content }));
+      await streamChat({ message: userEntry.content, history });
       const response = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
