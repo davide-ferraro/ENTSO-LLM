@@ -124,4 +124,8 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
     parsed = extract_json(generator_response)
     requests_list = parse_requests(parsed)
 
-    return LLMResponse(requests=requests_list, raw_message=generator_response)
+    return LLMResponse(
+        requests=requests_list,
+        raw_message=generator_response,
+        router_endpoints=selected_endpoints,
+    )

@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 class LLMResponse:
     requests: List[Dict[str, Any]]
     raw_message: str
+    router_endpoints: List[str]
 
 
 class LLMError(RuntimeError):

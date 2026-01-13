@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const MODEL_NAME = process.env.NEXT_PUBLIC_LLM_MODEL_NAME ?? "Qwen/Qwen2.5-7B-Instruct";
 
 type FileLink = {
   id: string;
@@ -31,6 +32,10 @@ type ChatEntry = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  kind?: "status" | "router" | "request";
+  routerEndpoints?: string[];
+  requestPayload?: Array<Record<string, unknown>>;
+  codeLegend?: CodeLegendEntry[];
   results?: RequestResult[];
   summary?: Record<string, unknown>;
   files?: FileLink[];
@@ -41,6 +46,101 @@ type CsvPreview = {
   rows: string[][];
 };
 
+type CodeLegendEntry = {
+  code: string;
+  description: string;
+};
+
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  A25: "Allocation result document",
+  A44: "Price document",
+  A61: "Estimated Net Transfer Capacity",
+  A65: "System total load",
+  A68: "Installed generation per type",
+  A69: "Wind and solar generation forecast",
+  A70: "Load forecast margin",
+  A71: "Generation forecast",
+  A73: "Actual generation per type",
+  A74: "Wind and solar generation",
+  A75: "Actual generation per generation unit",
+  A77: "Scheduled generation",
+  A78: "Unavailability of generation units",
+  A79: "Unavailability of production units",
+  A80: "Unavailability of offshore grid",
+  A81: "Unavailability of transmission infrastructure",
+  A85: "Imbalance volume",
+  A86: "Imbalance prices",
+};
+
+const PROCESS_TYPE_LABELS: Record<string, string> = {
+  A01: "Day ahead",
+  A16: "Realised",
+  A31: "Week ahead",
+  A32: "Month ahead",
+  A33: "Year ahead",
+  A43: "Day ahead (balancing)",
+  A44: "Intraday",
+};
+
+const BUSINESS_TYPE_LABELS: Record<string, string> = {
+  A04: "Base load",
+  A29: "Imports",
+  A30: "Exports",
+  B01: "Solar",
+  B02: "Wind onshore",
+  B03: "Wind offshore",
+  B04: "Fossil gas",
+  B05: "Fossil hard coal",
+  B06: "Fossil lignite",
+  B09: "Geothermal",
+  B10: "Congestion income",
+  B11: "Hydro pumped storage",
+  B12: "Hydro run-of-river",
+  B14: "Nuclear",
+  B15: "Fossil oil",
+  B16: "Solar",
+  B17: "Biomass",
+  B18: "Wind onshore",
+  B19: "Wind offshore",
+};
+
+const PSR_TYPE_LABELS: Record<string, string> = {
+  B01: "Biomass",
+  B02: "Fossil brown coal/lignite",
+  B03: "Fossil coal-derived gas",
+  B04: "Fossil gas",
+  B05: "Fossil hard coal",
+  B06: "Fossil oil",
+  B07: "Fossil oil shale",
+  B08: "Fossil peat",
+  B09: "Geothermal",
+  B10: "Hydro pumped storage",
+  B11: "Hydro run-of-river and poundage",
+  B12: "Hydro water reservoir",
+  B13: "Marine",
+  B14: "Nuclear",
+  B15: "Other renewable",
+  B16: "Solar",
+  B17: "Waste",
+  B18: "Wind offshore",
+  B19: "Wind onshore",
+  B20: "Other",
+};
+
+const EIC_CODE_LABELS: Record<string, string> = {
+  "10YAT-APG------L": "Austria (APG control area)",
+  "10YBE----------2": "Belgium",
+  "10YDE-VE-------2": "Germany (50Hertz)",
+  "10YFR-RTE------C": "France (RTE)",
+  "10YES-REE------0": "Spain (REE)",
+  "10YIT-GRTN-----B": "Italy (Terna)",
+  "10Y1001A1001A82H": "Germany-Luxembourg",
+  "10YGB----------A": "Great Britain",
+  "10YNL----------L": "Netherlands",
+  "10YDK-1--------W": "Denmark (DK1)",
+  "10YDK-2--------M": "Denmark (DK2)",
+};
+
 const parseCsvPreview = (text: string, maxRows = 8): CsvPreview => {
   const lines = text.trim().split("\n");
   if (lines.length === 0) {
@@ -49,6 +149,49 @@ const parseCsvPreview = (text: string, maxRows = 8): CsvPreview => {
   const headers = lines[0].split(",");
   const rows = lines.slice(1, maxRows + 1).map((line) => line.split(","));
   return { headers, rows };
+};
+
+const buildCodeLegend = (requests: Array<Record<string, unknown>> | undefined): CodeLegendEntry[] => {
+  if (!requests) {
+    return [];
+  }
+
+  const legend = new Map<string, string>();
+  const addLegend = (code: string, description: string | undefined) => {
+    if (description && !legend.has(code)) {
+      legend.set(code, description);
+    }
+  };
+
+  requests.forEach((request) => {
+    const params = request.params as Record<string, unknown> | undefined;
+    if (!params) {
+      return;
+    }
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (typeof value !== "string") {
+        return;
+      }
+      if (key === "documentType") {
+        addLegend(value, DOCUMENT_TYPE_LABELS[value]);
+      }
+      if (key === "processType") {
+        addLegend(value, PROCESS_TYPE_LABELS[value]);
+      }
+      if (key === "businessType") {
+        addLegend(value, BUSINESS_TYPE_LABELS[value]);
+      }
+      if (key === "psrType") {
+        addLegend(value, PSR_TYPE_LABELS[value]);
+      }
+      if (key.toLowerCase().includes("domain")) {
+        addLegend(value, EIC_CODE_LABELS[value]);
+      }
+    });
+  });
+
+  return Array.from(legend.entries()).map(([code, description]) => ({ code, description }));
 };
 
 const ResultCard = ({ result }: { result: RequestResult }) => {
@@ -164,7 +307,54 @@ export default function HomePage() {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [statusMessage, setStatusMessage] = useState("Ready for a new prompt.");
   const [error, setError] = useState<string | null>(null);
+  const statusTimersRef = useRef<number[]>([]);
+  const statusRef = useRef(status);
+  const statusEntryRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const updateStatusEntry = (nextMessage: string) => {
+    const statusId = statusEntryRef.current;
+    if (!statusId) {
+      return;
+    }
+    setMessages((prev) =>
+      prev.map((entry) => (entry.id === statusId ? { ...entry, content: nextMessage } : entry)),
+    );
+  };
+
+  const clearStatusTimers = () => {
+    statusTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    statusTimersRef.current = [];
+  };
+
+  const scheduleStatusUpdates = () => {
+    clearStatusTimers();
+    const steps = [
+      `Loading Qwen...${MODEL_NAME} for the first time`,
+      "Finding the right endpoint",
+      "Writing the request",
+      "Connecting to ENTSO-E APIs",
+    ];
+
+    setStatusMessage(steps[0]);
+    updateStatusEntry(steps[0]);
+
+    steps.slice(1).forEach((step, index) => {
+      const timer = window.setTimeout(() => {
+        if (statusRef.current !== "loading") {
+          return;
+        }
+        setStatusMessage(step);
+        updateStatusEntry(step);
+      }, (index + 1) * 1200);
+      statusTimersRef.current.push(timer);
+    });
+  };
 
   const handleSend = async () => {
     if (!input.trim()) {
@@ -177,18 +367,29 @@ export default function HomePage() {
       content: input,
     };
 
-    setMessages((prev) => [...prev, userEntry]);
+    const statusEntry: ChatEntry = {
+      id: `${Date.now()}-status`,
+      role: "assistant",
+      content: `Loading Qwen...${MODEL_NAME} for the first time`,
+      kind: "status",
+    };
+    statusEntryRef.current = statusEntry.id;
+    setMessages((prev) => [...prev, userEntry, statusEntry]);
     setInput("");
     setStatus("loading");
     setError(null);
+    scheduleStatusUpdates();
 
     try {
+      const history = messages
+        .filter((entry) => entry.kind !== "status" && entry.kind !== "router" && entry.kind !== "request")
+        .map((entry) => ({ role: entry.role, content: entry.content }));
       const response = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userEntry.content,
-          history: messages.map((entry) => ({ role: entry.role, content: entry.content })),
+          history,
         }),
       });
 
@@ -198,6 +399,26 @@ export default function HomePage() {
       }
 
       const data = await response.json();
+      const routerEntry: ChatEntry | null = data.router_endpoints?.length
+        ? {
+            id: `${Date.now()}-router`,
+            role: "assistant",
+            content: "Router selected the following endpoint(s):",
+            kind: "router",
+            routerEndpoints: data.router_endpoints,
+          }
+        : null;
+      const requestPayload = data.request_payload as Array<Record<string, unknown>> | undefined;
+      const requestEntry: ChatEntry | null = requestPayload
+        ? {
+            id: `${Date.now()}-request`,
+            role: "assistant",
+            content: "Generated JSON request payload:",
+            kind: "request",
+            requestPayload,
+            codeLegend: buildCodeLegend(requestPayload),
+          }
+        : null;
       const assistantEntry: ChatEntry = {
         id: `${Date.now()}-assistant`,
         role: "assistant",
@@ -207,11 +428,20 @@ export default function HomePage() {
         files: data.files,
       };
 
-      setMessages((prev) => [...prev, assistantEntry]);
+      setMessages((prev) => [
+        ...prev,
+        ...(routerEntry ? [routerEntry] : []),
+        ...(requestEntry ? [requestEntry] : []),
+        assistantEntry,
+      ]);
       setStatus("idle");
+      setStatusMessage("Ready for a new prompt.");
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Unknown error");
+      setStatusMessage("Request failed. Please try again.");
+    } finally {
+      clearStatusTimers();
     }
   };
 
@@ -293,12 +523,45 @@ export default function HomePage() {
           )}
 
           {messages.map((entry) => (
-            <article key={entry.id} className={`chat-message ${entry.role}`}>
+            <article key={entry.id} className={`chat-message ${entry.role} ${entry.kind ?? ""}`}>
               <div className="message-meta">
                 <span className="role-tag">{entry.role === "user" ? "You" : "ENTSO-E"}</span>
               </div>
               <div className="message-body">
-                <p>{entry.content}</p>
+                {entry.kind === "status" && <p className="muted">{entry.content}</p>}
+                {entry.kind === "router" && (
+                  <>
+                    <p>{entry.content}</p>
+                    <div className="tag-list">
+                      {entry.routerEndpoints?.map((endpoint) => (
+                        <span key={endpoint} className="tag">
+                          {endpoint}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {entry.kind === "request" && (
+                  <>
+                    <p>{entry.content}</p>
+                    {entry.requestPayload && (
+                      <div className="request-payload">
+                        <pre>{JSON.stringify(entry.requestPayload, null, 2)}</pre>
+                      </div>
+                    )}
+                    {entry.codeLegend && entry.codeLegend.length > 0 && (
+                      <div className="code-legend">
+                        {entry.codeLegend.map((legend) => (
+                          <div key={legend.code} className="legend-row">
+                            <span className="tag">{legend.code}</span>
+                            <span>{legend.description}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {!entry.kind && <p>{entry.content}</p>}
                 {entry.summary && (
                   <div className="summary-grid">
                     {Object.entries(entry.summary).map(([key, value]) => (
@@ -322,7 +585,7 @@ export default function HomePage() {
         </section>
 
         <footer className="composer">
-          {status === "loading" && <span className="status-text">Running ENTSO-E request…</span>}
+          {status === "loading" && <span className="status-text">{statusMessage}</span>}
           {status === "idle" && <span className="status-text">Ready for a new prompt.</span>}
           {status === "error" && <span className="status-text error-text">{error}</span>}
           <div className="composer-bar">
