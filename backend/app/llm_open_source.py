@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -31,6 +31,15 @@ def _resolve_endpoint(base_url: str) -> str:
     if normalized.endswith("/v1"):
         return f"{normalized}/chat/completions"
     return f"{normalized}/v1/chat/completions"
+
+
+def _resolve_status_endpoint(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        normalized = normalized[: -len("/chat/completions")]
+    if normalized.endswith("/v1"):
+        normalized = normalized[: -len("/v1")]
+    return f"{normalized}/status"
 
 
 def _call_llm(endpoint: str, headers: dict, messages: List[Dict[str, str]], temperature: float = 0.1) -> str:
@@ -84,6 +93,20 @@ def _build_headers() -> Tuple[str, dict]:
         headers["Authorization"] = f"Bearer {api_key}"
 
     return endpoint, headers
+
+
+def get_model_status(timeout: float = 300) -> Optional[bool]:
+    base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
+    status_endpoint = _resolve_status_endpoint(base_url)
+    _, headers = _build_headers()
+    try:
+        response = requests.get(status_endpoint, headers=headers, timeout=timeout)
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        return bool(data.get("loaded"))
+    except requests.RequestException:
+        return None
 
 
 def router_pass(message: str) -> List[str]:

@@ -2,7 +2,7 @@
 Modal deployment for vLLM serving Qwen2.5-7B-Instruct.
 """
 import modal
-from fastapi import FastAPI, Request
+from fastapi import Request
 
 MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 MODEL_REVISION = "main"
@@ -31,11 +31,15 @@ CACHE_DIR = "/root/.cache/huggingface"
     volumes={CACHE_DIR: model_cache},
 )
 class VLLMServer:
+    def __init__(self):
+        self.model_ready = False
+
     @modal.enter()
     def start_engine(self):
         from vllm.engine.arg_utils import AsyncEngineArgs
         from vllm.engine.async_llm_engine import AsyncLLMEngine
 
+        self.model_ready = False
         print(f"🚀 Loading model {MODEL_ID}...")
         engine_args = AsyncEngineArgs(
             model=MODEL_ID,
@@ -51,7 +55,12 @@ class VLLMServer:
         # Using the standard AsyncLLMEngine.from_engine_args is correct, 
         # but we need to ensure we don't accidentally close the loop.
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
+        self.model_ready = True
         print("✅ Model loaded successfully!")
+
+    @modal.fastapi_endpoint(method="GET")
+    async def status(self):
+        return {"loaded": self.model_ready, "model": MODEL_ID}
 
     @modal.fastapi_endpoint(method="POST")
     async def chat(self, request: Request):

@@ -42,8 +42,11 @@ from backend.app.models import (
     RequestResult,
 )
 from backend.app.storage import RESULTS_DIR, StoredFile, ensure_storage, get_storage_backend, register_files
-from backend.app.llm_open_source import generator_pass as generator_pass_oss
-from backend.app.llm_open_source import router_pass as router_pass_oss
+from backend.app.llm_open_source import (
+    generator_pass as generator_pass_oss,
+    get_model_status as get_model_status_oss,
+    router_pass as router_pass_oss,
+)
 
 app = FastAPI(title="ENTSO-LLM API")
 
@@ -152,14 +155,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
     )
 
 
-LLM_WARM = False
-
-
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest) -> StreamingResponse:
     async def event_stream():
-        nonlocal request
-        global LLM_WARM
 
         def send_event(event: str, payload: Dict[str, Any]) -> str:
             return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
@@ -205,35 +203,46 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             else:
                 model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-            if not LLM_WARM:
-                yield send_event(
-                    "status",
-                    {"message": f"Loading {model_name} for the first time"},
-                )
-                await asyncio.sleep(0)
+            if provider in {"oss", "open-source", "open_source", "open"}:
+                status_task = asyncio.create_task(asyncio.to_thread(get_model_status_oss))
+                model_ready: bool | None = None
+                try:
+                    model_ready = await asyncio.wait_for(status_task, timeout=0.5)
+                except asyncio.TimeoutError:
+                    yield send_event(
+                        "status",
+                        {"message": f"Loading {model_name} for the first time"},
+                    )
+                    await asyncio.sleep(0)
+                    model_ready = await status_task
+
+                if model_ready is None:
+                    yield send_event("status", {"message": "Finding the right endpoint"})
+                    await asyncio.sleep(0)
+                elif not model_ready:
+                    yield send_event(
+                        "status",
+                        {"message": f"Loading {model_name} for the first time"},
+                    )
+                    await asyncio.sleep(0)
+                    yield send_event("status", {"message": "Finding the right endpoint"})
+                    await asyncio.sleep(0)
+                else:
+                    yield send_event("status", {"message": "Finding the right endpoint"})
+                    await asyncio.sleep(0)
             else:
                 yield send_event("status", {"message": "Finding the right endpoint"})
                 await asyncio.sleep(0)
-            else:
-                yield send_event("status", {"message": "Finding the right endpoint"})
 
             if provider in {"oss", "open-source", "open_source", "open"}:
                 selected_endpoints = await asyncio.to_thread(router_pass_oss, request.message)
             else:
                 selected_endpoints = await asyncio.to_thread(router_pass, request.message)
 
-            if not LLM_WARM:
-                LLM_WARM = True
-                yield send_event("status", {"message": "Finding the right endpoint"})
-                await asyncio.sleep(0)
-
             yield send_event("router", {"endpoints": selected_endpoints})
             await asyncio.sleep(0)
             yield send_event("status", {"message": "Writing the request"})
             await asyncio.sleep(0)
-
-            yield send_event("router", {"endpoints": selected_endpoints})
-            yield send_event("status", {"message": "Writing the request"})
 
             if provider in {"oss", "open-source", "open_source", "open"}:
                 requests_list, raw_message = await asyncio.to_thread(
@@ -254,7 +263,6 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             await asyncio.sleep(0)
             yield send_event("status", {"message": "Connecting to ENTSO-E APIs"})
             await asyncio.sleep(0)
-            yield send_event("status", {"message": "Connecting to ENTSO-E APIs"})
 
             execution = await asyncio.to_thread(run_requests, requests_list)
             payload = normalize_results(llm_response, execution)
@@ -277,7 +285,6 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/conversations", response_model=List[ConversationSummary])
