@@ -310,8 +310,6 @@ export default function HomePage() {
   const [statusMessage, setStatusMessage] = useState("Ready for a new prompt.");
   const [error, setError] = useState<string | null>(null);
   const statusEntryRef = useRef<string | null>(null);
-  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const statusRef = useRef(status);
 
   const updateStatusEntry = (nextMessage: string) => {
     const statusId = statusEntryRef.current;
@@ -322,42 +320,6 @@ export default function HomePage() {
       prev.map((entry) => (entry.id === statusId ? { ...entry, content: nextMessage } : entry)),
     );
   };
-
-  const scheduleStatusUpdates = () => {
-    if (statusTimeoutRef.current) {
-      clearTimeout(statusTimeoutRef.current);
-    }
-
-    const updates = [
-      "Thinking through the request…",
-      "Gathering the latest ENTSO-E data…",
-      "Still working. Thanks for your patience…",
-    ];
-    let step = 0;
-
-    const tick = () => {
-      if (statusRef.current !== "loading") {
-        return;
-      }
-      const nextMessage = updates[Math.min(step, updates.length - 1)];
-      setStatusMessage(nextMessage);
-      updateStatusEntry(nextMessage);
-      step += 1;
-      if (step < updates.length) {
-        statusTimeoutRef.current = setTimeout(tick, 8000);
-      }
-    };
-
-    statusTimeoutRef.current = setTimeout(tick, 8000);
-  };
-
-  useEffect(() => {
-    statusRef.current = status;
-    if (status !== "loading" && statusTimeoutRef.current) {
-      clearTimeout(statusTimeoutRef.current);
-      statusTimeoutRef.current = null;
-    }
-  }, [status]);
 
   const handleEvent = (event: string, data: Record<string, unknown>) => {
     if (event === "status" && typeof data.message === "string") {
@@ -475,7 +437,6 @@ export default function HomePage() {
     setInput("");
     setStatus("loading");
     setError(null);
-    scheduleStatusUpdates();
 
     try {
       const history = messages
