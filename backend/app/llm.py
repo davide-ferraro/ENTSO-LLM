@@ -105,6 +105,8 @@ def generator_pass(
 
     generator_response = requests.post(
 
+    generator_response = requests.post(
+
     router_response = requests.post(
         OPENAI_API_URL,
         headers={"Authorization": f"Bearer {api_key}"},
@@ -155,6 +157,7 @@ def generator_pass(
     content = generator_response.json()["choices"][0]["message"]["content"]
     parsed = extract_json(content)
     requests_list = parse_requests(parsed)
+    return requests_list, content
 
     return LLMResponse(
         requests=requests_list,
