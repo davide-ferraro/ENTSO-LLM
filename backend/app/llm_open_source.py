@@ -25,6 +25,12 @@ def _resolve_endpoint(base_url: str) -> str:
     """Resolve the LLM API endpoint URL."""
     normalized = base_url.rstrip("/")
     if "modal.run" in normalized:
+        if normalized.endswith("/chat/completions"):
+            normalized = normalized[: -len("/chat/completions")]
+        if normalized.endswith("/chat"):
+            normalized = normalized[: -len("/chat")]
+        if normalized.endswith("/v1"):
+            normalized = normalized[: -len("/v1")]
         return normalized
     if normalized.endswith("/chat/completions"):
         return normalized
