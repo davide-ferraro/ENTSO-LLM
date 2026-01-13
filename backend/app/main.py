@@ -269,6 +269,8 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             yield send_event("results", payload)
             await asyncio.sleep(0)
             yield send_event("done", {"message": "complete"})
+        except asyncio.CancelledError:
+            return
         except LLMError as exc:
             yield send_event("error", {"detail": str(exc)})
         except EntsoeError as exc:
