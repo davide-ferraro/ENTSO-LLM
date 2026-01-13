@@ -216,61 +216,135 @@ export default function HomePage() {
   };
 
   return (
-    <div className="chat-layout">
-      <section className="chat-timeline">
-        {messages.length === 0 && (
-          <div className="empty-state">
-            <h3>Ask for ENTSO-E data</h3>
-            <p>Start with a question like "Get solar generation in Spain for last week".</p>
-          </div>
-        )}
-        {messages.map((entry) => (
-          <article key={entry.id} className={`chat-message ${entry.role}`}>
-            <div className="avatar">{entry.role === "user" ? "U" : "A"}</div>
-            <div className="content">
-              <p>{entry.content}</p>
-              {entry.summary && (
-                <div className="summary-grid">
-                  {Object.entries(entry.summary).map(([key, value]) => (
-                    <div key={key}>
-                      <span>{key.replaceAll("_", " ")}</span>
-                      <strong>{String(value)}</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {entry.results && (
-                <div className="results">
-                  {entry.results.map((result) => (
-                    <ResultCard key={result.name} result={result} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </article>
-        ))}
-      </section>
-
-      <aside className="chat-panel">
-        <div className={`status-box ${status}`}>
-          <h4>Status</h4>
-          {status === "loading" && <p>Running ENTSO-E request…</p>}
-          {status === "idle" && <p>Ready for a new prompt.</p>}
-          {status === "error" && <p className="error-text">{error}</p>}
+    <div className="workspace">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="logo-mark">entsoe</div>
+          <span>Reliable · Sustainable · Connected</span>
         </div>
-
-        <div className="composer">
-          <textarea
-            placeholder="Describe the data you need…"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            rows={5}
-          />
-          <button type="button" onClick={handleSend} disabled={status === "loading"}>
-            {status === "loading" ? "Sending…" : "Send"}
+        <nav className="sidebar-nav">
+          <button type="button" className="nav-item active">
+            + New chat
           </button>
+          <button type="button" className="nav-item">Search chats</button>
+          <button type="button" className="nav-item">Library</button>
+          <button type="button" className="nav-item">Apps</button>
+          <button type="button" className="nav-item">Codex</button>
+          <button type="button" className="nav-item">GPTs</button>
+        </nav>
+        <div className="sidebar-section">
+          <p className="section-title">Projects</p>
+          <button type="button" className="nav-item">New project</button>
+          <button type="button" className="nav-item">Mathlens</button>
+          <button type="button" className="nav-item">Writing LinkedIn content</button>
+          <button type="button" className="nav-item">Rebase Documentation</button>
+        </div>
+        <div className="sidebar-section">
+          <p className="section-title">Chats</p>
+          <button type="button" className="nav-item">Request Clarification</button>
+          <button type="button" className="nav-item">Push Repo to GitHub</button>
+          <button type="button" className="nav-item">GTM Strategy Review</button>
+        </div>
+        <div className="sidebar-footer">
+          <div className="profile">
+            <div className="avatar">DF</div>
+            <div>
+              <strong>Davide Ferraro</strong>
+              <span>Rebase Workspace</span>
+            </div>
+          </div>
+          <button type="button" className="invite">+ Invite team members</button>
         </div>
       </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <div className="model-selector">
+            <span className="model-dot" />
+            <span>ChatGPT 5.2</span>
+          </div>
+          <div className="top-actions">
+            <button type="button" className="ghost-button">
+              Share
+            </button>
+            <button type="button" className="ghost-button">⋯</button>
+            <button type="button" className="request-pill">
+              request
+            </button>
+          </div>
+        </header>
+
+        <section className="chat-area">
+          {messages.length === 0 && (
+            <article className="assistant-message">
+              <p>
+                Could you clarify what you mean by <strong>“request”</strong>?
+              </p>
+              <p className="muted">For example, are you trying to:</p>
+              <ul>
+                <li>make a work request (IT, ops, access, budget, etc.)</li>
+                <li>draft a formal request (email or document)</li>
+                <li>request information or a file</li>
+                <li>trigger some internal process at ENTSO-E</li>
+              </ul>
+              <p className="muted">A short sentence with the goal is enough, and I’ll take it from there.</p>
+              {status === "error" && <p className="error-text">{error}</p>}
+            </article>
+          )}
+
+          {messages.map((entry) => (
+            <article key={entry.id} className={`chat-message ${entry.role}`}>
+              <div className="message-meta">
+                <span className="role-tag">{entry.role === "user" ? "You" : "ENTSO-E"}</span>
+              </div>
+              <div className="message-body">
+                <p>{entry.content}</p>
+                {entry.summary && (
+                  <div className="summary-grid">
+                    {Object.entries(entry.summary).map(([key, value]) => (
+                      <div key={key}>
+                        <span>{key.replaceAll("_", " ")}</span>
+                        <strong>{String(value)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {entry.results && (
+                  <div className="results">
+                    {entry.results.map((result) => (
+                      <ResultCard key={result.name} result={result} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </article>
+          ))}
+        </section>
+
+        <footer className="composer">
+          {status === "loading" && <span className="status-text">Running ENTSO-E request…</span>}
+          {status === "idle" && <span className="status-text">Ready for a new prompt.</span>}
+          {status === "error" && <span className="status-text error-text">{error}</span>}
+          <div className="composer-bar">
+            <span className="composer-icon">🔎</span>
+            <textarea
+              placeholder="Ask anything"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              rows={1}
+            />
+            <button type="button" className="mic-button" aria-label="Record">
+              🎙️
+            </button>
+            <button type="button" className="send-button" onClick={handleSend} disabled={status === "loading"}>
+              ➤
+            </button>
+          </div>
+          <p className="footnote">
+            ChatGPT can make mistakes. ENTSO-E does not use your data to train its models.
+          </p>
+        </footer>
+      </main>
     </div>
   );
 }
