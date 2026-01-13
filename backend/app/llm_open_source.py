@@ -98,8 +98,12 @@ def _build_headers() -> Tuple[str, dict]:
 
 
 def get_model_status(timeout: float = 300) -> Optional[bool]:
-    base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
-    status_endpoint = _resolve_status_endpoint(base_url)
+    status_override = os.getenv("OSS_LLM_STATUS_URL")
+    if status_override:
+        status_endpoint = status_override.rstrip("/")
+    else:
+        base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
+        status_endpoint = _resolve_status_endpoint(base_url)
     _, headers = _build_headers()
     try:
         response = requests.get(status_endpoint, headers=headers, timeout=timeout)
