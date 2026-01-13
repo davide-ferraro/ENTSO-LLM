@@ -17,6 +17,10 @@ DEFAULT_OSS_BASE_URL = "http://localhost:8000/v1"
 
 def _resolve_endpoint(base_url: str) -> str:
     normalized = base_url.rstrip("/")
+    # If it's a Modal deployment, use the URL exactly as provided
+    if "modal.run" in normalized:
+        return normalized
+    # Fallback for standard OpenAI-compatible providers
     if normalized.endswith("/chat/completions"):
         return normalized
     if normalized.endswith("/v1"):
@@ -49,14 +53,17 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
             "response_format": {"type": "json_object"},
             "temperature": 0.1,
         },
-        timeout=120,
+        timeout=300,
     )
 
     if response.status_code != 200:
+        print(f"❌ LLM API Error: {response.status_code} - {response.text}")
         raise LLMError(f"Open-source LLM API error: {response.status_code} {response.text}")
 
     data = response.json()
     content = data["choices"][0]["message"]["content"]
+    print(f"📥 LLM Raw Content (FULL):\n{content}\n") # Log FULL content
+    
     parsed = extract_json(content)
     requests_list = parse_requests(parsed)
 

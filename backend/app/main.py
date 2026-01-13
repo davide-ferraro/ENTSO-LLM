@@ -7,6 +7,12 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+# Load environment variables from backend/.env
+env_path = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(dotenv_path=env_path)
+
 
 from backend.app.database import (
     add_file,
@@ -45,6 +51,8 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup() -> None:
+    # Double check env is loaded on startup if needed, 
+    # but top-level load_dotenv is usually sufficient.
     ensure_storage()
     init_db()
 
@@ -118,7 +126,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
             for link in files:
                 if Path(file_entry["path"]).resolve() == Path(link["local_path"]).resolve():
                     linked_files.append(FileLink(**{k: v for k, v in link.items() if k not in {"storage_key", "local_path"}}))
-        results.append(RequestResult(**result, files=linked_files))
+        # Prevent "got multiple values for keyword argument 'files'"
+        # by excluding it from the unpacked result dict
+        result_data = {k: v for k, v in result.items() if k != "files"}
+        results.append(RequestResult(**result_data, files=linked_files))
 
     return ChatResponse(
         conversation_id=conversation.id,

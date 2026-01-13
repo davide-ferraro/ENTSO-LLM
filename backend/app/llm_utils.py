@@ -47,8 +47,18 @@ def parse_requests(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return normalized
 
 
-def extract_json(content: str) -> Dict[str, Any]:
+def extract_json(text: str) -> Dict[str, Any]:
+    """Extract JSON from text, handling markdown blocks."""
+    text = text.strip()
+    # Robustly find the JSON object using regex
+    # asking for non-greedy match of dotall
+    import re
+    match = re.search(r"(\{.*\})", text, re.DOTALL)
+    if match:
+        text = match.group(1)
+    
     try:
-        return json.loads(content)
+        return json.loads(text)
     except json.JSONDecodeError as exc:
-        raise LLMError(f"LLM response was not valid JSON: {exc}") from exc
+        print(f"❌ JSON PARSE ERROR. Content attempting to parse:\n{text}\n")
+        raise LLMError(f"Invalid JSON received from LLM: {exc}. Content: {text[:500]}") from exc

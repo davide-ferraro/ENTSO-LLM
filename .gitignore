@@ -58,3 +58,8 @@ results/
 .coverage
 htmlcov/
 
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/package-lock.json
