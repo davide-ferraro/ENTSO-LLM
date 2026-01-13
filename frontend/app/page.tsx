@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const MODEL_NAME = process.env.NEXT_PUBLIC_LLM_MODEL_NAME ?? "Qwen/Qwen2.5-7B-Instruct";
 
 type FileLink = {
   id: string;
@@ -310,6 +312,14 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const statusEntryRef = useRef<string | null>(null);
 
+  const statusTimersRef = useRef<number[]>([]);
+  const statusRef = useRef(status);
+  const statusEntryRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
   const updateStatusEntry = (nextMessage: string) => {
     const statusId = statusEntryRef.current;
     if (!statusId) {
@@ -412,6 +422,33 @@ export default function HomePage() {
         }
       }
     }
+  const clearStatusTimers = () => {
+    statusTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    statusTimersRef.current = [];
+  };
+
+  const scheduleStatusUpdates = () => {
+    clearStatusTimers();
+    const steps = [
+      `Loading Qwen...${MODEL_NAME} for the first time`,
+      "Finding the right endpoint",
+      "Writing the request",
+      "Connecting to ENTSO-E APIs",
+    ];
+
+    setStatusMessage(steps[0]);
+    updateStatusEntry(steps[0]);
+
+    steps.slice(1).forEach((step, index) => {
+      const timer = window.setTimeout(() => {
+        if (statusRef.current !== "loading") {
+          return;
+        }
+        setStatusMessage(step);
+        updateStatusEntry(step);
+      }, (index + 1) * 1200);
+      statusTimersRef.current.push(timer);
+    });
   };
 
   const handleSend = async () => {
@@ -429,6 +466,7 @@ export default function HomePage() {
       id: `${Date.now()}-status`,
       role: "assistant",
       content: "Starting request…",
+      content: `Loading Qwen...${MODEL_NAME} for the first time`,
       kind: "status",
     };
     statusEntryRef.current = statusEntry.id;
@@ -436,16 +474,71 @@ export default function HomePage() {
     setInput("");
     setStatus("loading");
     setError(null);
+    scheduleStatusUpdates();
 
     try {
       const history = messages
         .filter((entry) => entry.kind !== "status" && entry.kind !== "router" && entry.kind !== "request")
         .map((entry) => ({ role: entry.role, content: entry.content }));
       await streamChat({ message: userEntry.content, history });
+      const response = await fetch(`${API_BASE}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userEntry.content,
+          history,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail ?? "Chat request failed");
+      }
+
+      const data = await response.json();
+      const routerEntry: ChatEntry | null = data.router_endpoints?.length
+        ? {
+            id: `${Date.now()}-router`,
+            role: "assistant",
+            content: "Router selected the following endpoint(s):",
+            kind: "router",
+            routerEndpoints: data.router_endpoints,
+          }
+        : null;
+      const requestPayload = data.request_payload as Array<Record<string, unknown>> | undefined;
+      const requestEntry: ChatEntry | null = requestPayload
+        ? {
+            id: `${Date.now()}-request`,
+            role: "assistant",
+            content: "Generated JSON request payload:",
+            kind: "request",
+            requestPayload,
+            codeLegend: buildCodeLegend(requestPayload),
+          }
+        : null;
+      const assistantEntry: ChatEntry = {
+        id: `${Date.now()}-assistant`,
+        role: "assistant",
+        content: "ENTSO-E requests executed. Review outputs below.",
+        results: data.results,
+        summary: data.summary,
+        files: data.files,
+      };
+
+      setMessages((prev) => [
+        ...prev,
+        ...(routerEntry ? [routerEntry] : []),
+        ...(requestEntry ? [requestEntry] : []),
+        assistantEntry,
+      ]);
+      setStatus("idle");
+      setStatusMessage("Ready for a new prompt.");
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Unknown error");
       setStatusMessage("Request failed. Please try again.");
+    } finally {
+      clearStatusTimers();
     }
   };
 
