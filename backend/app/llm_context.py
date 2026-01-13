@@ -1,128 +1,38 @@
-"""Context builder for LLM request generation."""
+"""Context builder for Two-Pass LLM request generation.
+
+Pass 1 (Router): LLM selects the relevant endpoint(s) from the menu.
+Pass 2 (Generator): LLM generates JSON using the selected endpoint's examples.
+"""
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import List
 
 
 DOCS_ROOT = Path(__file__).resolve().parents[2] / "docs"
-PROMPT_FILES = (
-    DOCS_ROOT / "prompts" / "context_prompt.md",
-    DOCS_ROOT / "prompts" / "prompt_instructions.md",
-)
-DOCS_SEARCH_DIRS = (
-    DOCS_ROOT / "api",
-    DOCS_ROOT / "examples",
-)
 
-PROMPT_SECTION_TITLES = {
-    "Your Role",
-    "Request Format",
-    "Important Constraints",
-    "Time Format",
-    "Most Common Document Types",
-    "Most Common Process Types",
-    "Most Common PSR Types",
-    "Frequently Used EIC Codes",
-    "Historical Data Requests",
-}
+# Prompt files
+ROUTER_PROMPT = DOCS_ROOT / "prompts" / "router_prompt.md"
+GENERATOR_PROMPT = DOCS_ROOT / "prompts" / "generator_prompt.md"
+EXAMPLES_MENU = DOCS_ROOT / "examples" / "examples_menu.md"
+EXAMPLES_DIR = DOCS_ROOT / "examples" / "endpoints"
+API_DOCS_DIR = DOCS_ROOT / "api" / "endpoints_doc"
 
 
-@dataclass(frozen=True)
-class DocSnippet:
-    source: str
-    content: str
-    score: int
-
-
-def _tokenize(text: str) -> List[str]:
-    return re.findall(r"[a-z0-9]+", text.lower())
-
-
-def _score_snippet(terms: set[str], snippet: str) -> int:
-    if not terms:
-        return 0
-    snippet_terms = set(_tokenize(snippet))
-    return sum(1 for term in terms if term in snippet_terms)
-
-
-def _split_blocks(text: str) -> Iterable[str]:
-    for block in re.split(r"\n{2,}", text):
-        cleaned = block.strip()
-        if cleaned:
-            yield cleaned
-
-
-def _normalize_title(title: str) -> str:
-    return " ".join(re.findall(r"[A-Za-z0-9]+", title))
-
-
-def _load_prompt_sections(path: Path) -> List[str]:
-    """Load the full content of the prompt file."""
-    return [path.read_text(encoding="utf-8")]
-
-
-@lru_cache(maxsize=1)
-def _base_prompt_sections() -> List[str]:
-    sections: List[str] = []
-    for path in PROMPT_FILES:
-        if path.exists():
-            sections.extend(_load_prompt_sections(path))
-    return sections
-
-
-def _collect_doc_snippets(terms: set[str], limit: int) -> List[DocSnippet]:
-    snippets: List[DocSnippet] = []
-    for directory in DOCS_SEARCH_DIRS:
-        for path in directory.glob("*.md"):
-            text = path.read_text(encoding="utf-8")
-            for block in _split_blocks(text):
-                score = _score_snippet(terms, block)
-                if score > 0:
-                    snippets.append(
-                        DocSnippet(
-                            source=f"{path.relative_to(DOCS_ROOT)}",
-                            content=block,
-                            score=score,
-                        )
-                    )
-    snippets.sort(key=lambda item: item.score, reverse=True)
-    return snippets[:limit]
-
-
-def _format_snippets(snippets: Sequence[DocSnippet]) -> str:
-    if not snippets:
-        return ""
-    lines = ["Relevant documentation snippets:"]
-    for snippet in snippets:
-        lines.append(f"- Source: {snippet.source}")
-        lines.append(snippet.content)
-    return "\n".join(lines)
-
-
-def _format_index() -> str:
-    entries = [
-        "docs/api/ENTSOE_Transparency_API_Documentation.md (API parameters & endpoints)",
-        "docs/api/ENTSOE_EIC_Area_Codes.md (EIC area/bidding zone codes)",
-        "docs/examples/request_examples.md (working request examples)",
-        "docs/examples/natural_language_examples.md (NL prompt examples)",
-    ]
-    return "Documentation index:\n" + "\n".join(f"- {entry}" for entry in entries)
-
+# ============================================================================
+# COMMON EIC CODES (hardcoded for quick reference)
+# ============================================================================
 
 COMMON_EIC_CODES = """
-### REFERENCE: COMMON EIC CODES
-| Country | Code |
-|---|---|
+## EIC Codes Reference
+
+| Country | EIC Code |
+|---------|----------|
 | Austria | 10YAT-APG------L |
 | Belgium | 10YBE----------2 |
-| Bosnia & Herz. | 10YBA-JPCC-----D |
-| Bulgaria | 10YCA-BULGARIA-R |
-| Croatia | 10YHR-HEP------M |
 | Czech Republic | 10YCZ-CEPS-----N |
 | Denmark (DK1) | 10YDK-1--------W |
 | Denmark (DK2) | 10YDK-2--------M |
@@ -135,107 +45,212 @@ COMMON_EIC_CODES = """
 | Ireland | 10Y1001A1001A59C |
 | Italy (North) | 10Y1001A1001A73I |
 | Italy (South) | 10Y1001A1001A788 |
-| Montenegro | 10YCS-CG-TSO---S |
 | Netherlands | 10YNL----------L |
-| North Macedonia | 10YMK-MEPSO----8 |
 | Norway (NO1) | 10YNO-1--------2 |
 | Poland | 10YPL-AREA-----S |
 | Portugal | 10YPT-REN------W |
 | Romania | 10YRO-TEL------P |
-| Serbia | 10YCS-SERBIATSOV |
-| Slovakia | 10YSK-SEPS-----K |
-| Slovenia | 10YSI-ELES-----O |
 | Spain | 10YES-REE------0 |
 | Sweden (SE3) | 10Y1001A1001A46L |
 | Switzerland | 10YCH-SWISSGRIDZ |
 """
 
-def _load_menu_items() -> List[Tuple[str, str]]:
+# Mapping from Endpoint ID to documentation filename
+ENDPOINT_TO_DOC = {
+    "E01": "total_nominated_capacity.md",
+    "E02": "implicit_allocations_offered_transfer_capacity.md",
+    "E03": "transfer_capacities_with_third_countries.md",
+    "E04": "total_capacity_already_allocated.md",
+    "E05": "explicit_allocations_offered_transfer_capacity.md",
+    "E06": "explicit_allocations_use_of_transfer_capacity.md",
+    "E07": "explicit_allocations_auction_revenue.md",
+    "E08": "implicit_auction_net_positions.md",
+    "E09": "continuous_allocations_offered_transfer_capacity.md",
+    "E10": "energy_prices.md",
+    "E11": "actual_total_load_6_1_a_get_method.md",
+    "E12": "day_ahead_total_load_forecast.md",
+    "E13": "week_ahead_total_load_forecast.md",
+    "E14": "installed_capacity_per_production_type.md",
+    "E15": "year_ahead_total_load_forecast.md",
+    "E16": "actual_generation_per_generation_unit.md",
+    "E17": "actual_generation_per_production_type.md",
+    "E18": "generation_forecast_day_ahead.md",
+    "E19": "generation_forecasts_for_wind_and_solar.md",
+    "E20": "cross_border_physical_flows.md",
+    "E21": "forecasted_transfer_capacities.md",
+    "E22": "commercial_schedules.md",
+    "E23": "cross_border_capacity_of_dc_links_intraday_transfer_limits.md",
+    "E24": "unavailability_of_generation_units.md",
+    "E25": "unavailability_of_transmission_infrastructure.md",
+    "E26": "imbalance_prices.md",
+    "E27": "total_imbalance_volumes.md",
+    "E28": "current_balancing_state_area_control_error.md",
+    "E29": "fcr_total_capacity.md",
+    "E30": "prices_of_activated_balancing_energy.md",
+    "E37": "unavailability_of_production_units.md",
+    "E41": "cross_border_marginal_prices.md",
+    "E43": "aggregated_balancing_energy_bids.md",
+    "E44": "volumes_and_prices_of_contracted_reserves.md",
+    "E45": "procured_balancing_capacity.md",
+    "E46": "energy_prices.md",
+    "E47": "energy_prices.md",
+    "E48": "imbalance_prices.md",
+    "E49": "cross_border_physical_flows.md",
+    "E50": "congestion_income.md",
+    "E51": "actual_total_load_6_1_a_get_method.md",
+    "E52": "actual_generation_per_production_type.md",
+    "E53": "generation_forecasts_for_wind_and_solar.md",
+    "E54": "forecasted_transfer_capacities.md",
+    "E55": "total_imbalance_volumes.md",
+    "E56": "energy_prices.md",
+    "E57": "energy_prices.md",
+    "E58": "energy_prices.md",
+    "E59": "cross_border_physical_flows.md",
+    "E60": "cross_border_physical_flows.md",
+    "E61": "installed_capacity_per_production_type.md",
+    "E62": "unavailability_of_generation_units.md",
+    "E63": "unavailability_of_transmission_infrastructure.md",
+    "E64": "current_balancing_state_area_control_error.md",
+    "E65": "prices_of_activated_balancing_energy.md",
+}
+
+
+# ============================================================================
+# PASS 1: ROUTER
+# ============================================================================
+
+@lru_cache(maxsize=1)
+def _load_router_prompt() -> str:
+    """Load the router prompt template."""
+    if ROUTER_PROMPT.exists():
+        return ROUTER_PROMPT.read_text(encoding="utf-8")
+    return "Select the endpoint for this request. Return JSON: {\"endpoints\": [\"E10\"]}"
+
+
+@lru_cache(maxsize=1)
+def _load_examples_menu() -> str:
+    """Load the examples menu."""
+    if EXAMPLES_MENU.exists():
+        return EXAMPLES_MENU.read_text(encoding="utf-8")
+    return ""
+
+
+def build_router_context(user_query: str) -> str:
     """
-    Parses examples_menu.md into a list of (endpoint_id, full_text_block).
-    Returns list of ("E01", "## E01 - Title\n- Description..."), etc.
+    Build context for Pass 1: Router.
+    
+    The LLM will see:
+    1. Router prompt (instructions)
+    2. Examples menu (all endpoints)
+    3. User query
+    
+    The LLM should return: {"endpoints": ["E10"]}
     """
-    menu_path = DOCS_ROOT / "examples" / "examples_menu.md"
-    if not menu_path.exists():
-        return []
+    router_prompt = _load_router_prompt()
+    examples_menu = _load_examples_menu()
     
-    text = menu_path.read_text(encoding="utf-8")
-    items = []
-    # Split by level 2 headers
-    parts = re.split(r'(?=## E\d+)', text)
-    
-    for part in parts:
-        part = part.strip()
-        if not part.startswith("## E"):
-            continue
-        # Extract ID (E01, E12, etc.)
-        match = re.search(r"## (E\d+)", part)
-        if match:
-            eid = match.group(1)
-            items.append((eid, part))
-    return items
-
-
-def _get_relevant_examples(query_terms: set[str], limit: int = 3) -> str:
-    """Finds top N relevant examples and loads their full content."""
-    menu_items = _load_menu_items()
-    if not menu_items:
-        return ""
-
-    scored = []
-    for eid, text in menu_items:
-        score = _score_snippet(query_terms, text)
-        scored.append((score, eid, text))
-    
-    # Sort by score descending
-    scored.sort(key=lambda x: x[0], reverse=True)
-    
-    # Keep top items if they have any relevance (>0 score)
-    top_items = [item for item in scored if item[0] > 0][:limit]
-    
-    if not top_items:
-        return ""
-
-    selected_content = []
-    selected_content.append("### RELEVANT EXAMPLES (Based on your query):")
-    
-    for score, eid, menu_text in top_items:
-        # Load the actual full example file
-        ex_file = DOCS_ROOT / "examples" / "endpoints" / f"{eid}.md"
-        if ex_file.exists():
-            full_content = ex_file.read_text(encoding="utf-8")
-            selected_content.append(f"\n--- Example {eid} ---\n{full_content}")
-        else:
-            selected_content.append(f"\n--- Summary {eid} ---\n{menu_text}")
-
-    return "\n\n".join(selected_content)
-
-def build_context(message: str, history: Sequence[dict[str, str]] | None = None) -> str:
-    from datetime import datetime, timezone
-    
-    # 1. Base Context
-    context_prompts = _base_prompt_sections()
-    
-    # 2. Dynamic Example Retrieval
-    history_text = "\n".join(msg.get("content", "") for msg in history or [])
-    query = f"{message}\n{history_text}".strip()
-    terms = set(_tokenize(query))
-    
-    # Limit to top 2 examples to save tokens
-    relevant_examples = _get_relevant_examples(terms, limit=2)
-
-    # Current Time Info
-    now = datetime.now(timezone.utc)
-    time_info = f"Current Date and Time (UTC): {now.strftime('%Y-%m-%d %H:%M')}"
-
     parts = [
-        "You are an ENTSO-E request generator. Return only valid JSON.",
-        time_info,
-        "\n\n".join(context_prompts),
-        COMMON_EIC_CODES,
-        relevant_examples,
-        "### USER REQUEST",
-        "Output schema: {\"requests\": [{\"name\": \"...\", \"params\": { ... }}]}",
+        router_prompt,
+        "## Endpoint Menu\n" + examples_menu,
+        f"## User Request\n{user_query}",
+        "## Your Response (JSON only):"
     ]
     
-    return "\n\n".join(part for part in parts if part)
+    return "\n\n".join(parts)
+
+
+# ============================================================================
+# PASS 2: GENERATOR
+# ============================================================================
+
+@lru_cache(maxsize=1)
+def _load_generator_prompt() -> str:
+    """Load the generator prompt template."""
+    if GENERATOR_PROMPT.exists():
+        return GENERATOR_PROMPT.read_text(encoding="utf-8")
+    return "Generate the ENTSO-E API request as JSON."
+
+
+def _load_endpoint_examples(endpoint_ids: List[str]) -> str:
+    """Load the full example files for selected endpoints."""
+    content_parts = []
+    
+    for eid in endpoint_ids:
+        example_file = EXAMPLES_DIR / f"{eid}.md"
+        if example_file.exists():
+            content_parts.append(f"## Examples for {eid}\n" + example_file.read_text(encoding="utf-8"))
+    
+    if content_parts:
+        return "\n\n".join(content_parts)
+    return ""
+
+
+def _load_endpoint_documentation(endpoint_ids: List[str]) -> str:
+    """Load matching API documentation files for selected endpoints."""
+    content_parts = []
+    seen_docs = set()
+    
+    for eid in endpoint_ids:
+        doc_filename = ENDPOINT_TO_DOC.get(eid)
+        if doc_filename and doc_filename not in seen_docs:
+            doc_file = API_DOCS_DIR / doc_filename
+            if doc_file.exists():
+                content_parts.append(f"### TECHNICAL DOC: {doc_filename}\n" + doc_file.read_text(encoding="utf-8"))
+                seen_docs.add(doc_filename)
+                
+    if content_parts:
+        return "\n\n".join(content_parts)
+    return ""
+
+
+def build_generator_context(user_query: str, endpoint_ids: List[str]) -> str:
+    """
+    Build context for Pass 2: Generator.
+    
+    The LLM will see:
+    1. Generator prompt (instructions + output format)
+    2. Current UTC time
+    3. EIC codes reference
+    4. Selected endpoint examples
+    5. Selected technical documentation
+    6. User query
+    """
+    generator_prompt = _load_generator_prompt()
+    examples = _load_endpoint_examples(endpoint_ids)
+    technical_docs = _load_endpoint_documentation(endpoint_ids)
+    
+    # Current time
+    now = datetime.now(timezone.utc)
+    current_time = now.strftime('%Y%m%d%H%M')
+    
+    parts = [
+        generator_prompt,
+        f"## Current UTC Time\n{current_time}",
+        COMMON_EIC_CODES.strip(),
+    ]
+    
+    if technical_docs:
+        parts.append(technical_docs)
+        
+    if examples:
+        parts.append(examples)
+    
+    parts.extend([
+        f"## User Request\n{user_query}",
+        "## Generate the JSON:"
+    ])
+    
+    return "\n\n".join(parts)
+
+
+# ============================================================================
+# LEGACY COMPATIBILITY (single-pass, deprecated)
+# ============================================================================
+
+def build_context(message: str, history=None) -> str:
+    """
+    Legacy single-pass context builder.
+    DEPRECATED: Use build_router_context + build_generator_context instead.
+    """
+    # Fallback to generator context with a default endpoint
+    return build_generator_context(message, ["E10", "E11", "E17"])

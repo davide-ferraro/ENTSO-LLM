@@ -1,13 +1,19 @@
-"""Open-source LLM integration for generating ENTSO-E requests."""
+"""Open-source LLM integration for generating ENTSO-E requests.
+
+Uses a Two-Pass architecture:
+1. Router Pass: LLM selects the relevant endpoint(s)
+2. Generator Pass: LLM generates JSON using selected endpoint examples
+"""
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Dict, List
 
 import requests
 
-from backend.app.llm_context import build_context
+from backend.app.llm_context import build_router_context, build_generator_context
 from backend.app.llm_utils import LLMError, LLMResponse, extract_json, parse_requests
 
 
@@ -16,11 +22,10 @@ DEFAULT_OSS_BASE_URL = "http://localhost:8000/v1"
 
 
 def _resolve_endpoint(base_url: str) -> str:
+    """Resolve the LLM API endpoint URL."""
     normalized = base_url.rstrip("/")
-    # If it's a Modal deployment, use the URL exactly as provided
     if "modal.run" in normalized:
         return normalized
-    # Fallback for standard OpenAI-compatible providers
     if normalized.endswith("/chat/completions"):
         return normalized
     if normalized.endswith("/v1"):
@@ -28,43 +33,95 @@ def _resolve_endpoint(base_url: str) -> str:
     return f"{normalized}/v1/chat/completions"
 
 
-def generate_requests(message: str, history: List[Dict[str, str]] | None = None) -> LLMResponse:
-    base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
-    endpoint = _resolve_endpoint(base_url)
-    api_key = os.getenv("OSS_LLM_API_KEY")
-    model = os.getenv("OSS_LLM_MODEL", DEFAULT_OSS_MODEL)
-    system_prompt = build_context(message, history)
-
-    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": message})
-
-    headers = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
+def _call_llm(endpoint: str, headers: dict, messages: List[Dict[str, str]], temperature: float = 0.1) -> str:
+    """Make a single LLM API call and return the content."""
     response = requests.post(
         endpoint,
         headers=headers,
         json={
-            "model": model,
             "messages": messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.1,
+            "temperature": temperature,
         },
         timeout=300,
     )
 
     if response.status_code != 200:
         print(f"❌ LLM API Error: {response.status_code} - {response.text}")
-        raise LLMError(f"Open-source LLM API error: {response.status_code} {response.text}")
+        raise LLMError(f"LLM API error: {response.status_code} {response.text}")
 
     data = response.json()
-    content = data["choices"][0]["message"]["content"]
-    print(f"📥 LLM Raw Content (FULL):\n{content}\n") # Log FULL content
+    return data["choices"][0]["message"]["content"]
+
+
+def _parse_router_response(content: str) -> List[str]:
+    """Parse the router response to extract endpoint IDs."""
+    try:
+        # Try to extract JSON from the response
+        parsed = extract_json(content)
+        endpoints = parsed.get("endpoints", [])
+        if endpoints:
+            return endpoints
+    except Exception:
+        pass
     
-    parsed = extract_json(content)
+    # Fallback: look for E## patterns in the text
+    import re
+    matches = re.findall(r'E\d+', content)
+    if matches:
+        return matches[:2]  # Max 2 endpoints
+    
+    # Default fallback
+    return ["E10"]
+
+
+def generate_requests(message: str, history: List[Dict[str, str]] | None = None) -> LLMResponse:
+    """
+    Generate ENTSO-E API requests using Two-Pass LLM architecture.
+    
+    Pass 1 (Router): Select relevant endpoint(s)
+    Pass 2 (Generator): Generate JSON using selected examples
+    """
+    base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
+    endpoint = _resolve_endpoint(base_url)
+    api_key = os.getenv("OSS_LLM_API_KEY")
+
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    # =========================================================================
+    # PASS 1: ROUTER - Select the relevant endpoint(s)
+    # =========================================================================
+    print("🔹 Pass 1: Routing to select endpoint...")
+    
+    router_context = build_router_context(message)
+    router_messages = [
+        {"role": "system", "content": router_context},
+        {"role": "user", "content": message}
+    ]
+    
+    router_response = _call_llm(endpoint, headers, router_messages, temperature=0.1)
+    print(f"📍 Router response: {router_response[:200]}...")
+    
+    selected_endpoints = _parse_router_response(router_response)
+    print(f"✅ Selected endpoints: {selected_endpoints}")
+
+    # =========================================================================
+    # PASS 2: GENERATOR - Generate JSON using selected examples
+    # =========================================================================
+    print("🔹 Pass 2: Generating JSON request...")
+    
+    generator_context = build_generator_context(message, selected_endpoints)
+    generator_messages = [
+        {"role": "system", "content": generator_context},
+        {"role": "user", "content": message}
+    ]
+    
+    generator_response = _call_llm(endpoint, headers, generator_messages, temperature=0.1)
+    print(f"📥 Generator response:\n{generator_response}\n")
+    
+    # Parse the final JSON response
+    parsed = extract_json(generator_response)
     requests_list = parse_requests(parsed)
 
-    return LLMResponse(requests=requests_list, raw_message=content)
+    return LLMResponse(requests=requests_list, raw_message=generator_response)

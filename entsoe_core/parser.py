@@ -498,55 +498,69 @@ def parse_xml_string(xml_content: str) -> Dict[str, Any]:
 # CSV EXPORT FUNCTIONS
 # =============================================================================
 
-def _generate_column_name(ts: Dict[str, Any], index: int) -> str:
+def _generate_column_name(ts: Dict[str, Any], index: int, doc_metadata: Dict[str, Any] = None) -> str:
     """
     Generate a descriptive column name for a timeseries.
     
     Args:
         ts: Timeseries dictionary
         index: Index of the timeseries (fallback for naming)
+        doc_metadata: Optional document metadata (e.g. processType)
         
     Returns:
         Column name string
     """
     parts = []
     
-    # PSR Type (generation source)
+    # Process Type (e.g. Forecast vs Actual)
+    if doc_metadata and doc_metadata.get('processType'):
+        proc_type = doc_metadata['processType']
+        # Map some common process types to short labels
+        proc_labels = {
+            'A01': 'Forecast',
+            'A16': 'Actual',
+            'A33': 'YearAhead',
+            'A40': 'Intraday'
+        }
+        parts.append(proc_labels.get(proc_type, proc_type))
+
+    # Area/Domain
+    area = (ts.get('in') or ts.get('out') or ts.get('controlArea') or 
+            ts.get('area') or ts.get('inBiddingZone') or ts.get('outBiddingZone'))
+    
+    if area:
+        area_str = str(area)
+        area_label = area_str.replace('10Y', '').split('-')[0]
+        if not area_label: area_label = area_str[:7]
+        parts.append(area_label)
+            
+    # PSR Type
     psr_type = ts.get('psrType', '')
     if psr_type:
-        psr_name = PSR_TYPE_NAMES.get(psr_type, psr_type)
-        parts.append(psr_name)
+        parts.append(PSR_TYPE_NAMES.get(psr_type, psr_type))
     
     # Business Type
     biz_type = ts.get('businessType', '')
-    if biz_type and not psr_type:  # Only add if no PSR type
+    if biz_type:
         biz_name = BUSINESS_TYPE_NAMES.get(biz_type, biz_type)
-        parts.append(biz_name)
+        if not (psr_type and biz_name == 'Production'):
+            parts.append(biz_name)
     
-    # Flow direction
-    flow_dir = ts.get('flowDirection', '')
-    if flow_dir:
-        parts.append('Up' if flow_dir == 'A01' else 'Down')
-    
-    # Domain info for flows
-    in_domain = ts.get('in', '')
-    out_domain = ts.get('out', '')
-    if in_domain and out_domain:
-        # Shorten domain codes
-        in_short = in_domain[-8:-1] if len(in_domain) > 8 else in_domain
-        out_short = out_domain[-8:-1] if len(out_domain) > 8 else out_domain
-        parts.append(f"{out_short}_to_{in_short}")
+    # Imbalance Price Category (A04/A05)
+    category = ts.get('imbalancePriceCategory')
+    if category:
+        cat_map = {'A04': 'Shortage', 'A05': 'Excess'}
+        parts.append(cat_map.get(category, category))
     
     # Unit
     unit = ts.get('unit', '') or ts.get('currency', '')
     if unit:
         parts.append(unit)
     
-    # Fallback to index if no parts
     if not parts:
         parts.append(f"series_{index}")
     
-    return '_'.join(parts)
+    return '_'.join(parts).replace(' ', '')
 
 
 def _get_value_from_point(point: Dict[str, Any]) -> Optional[float]:
@@ -571,16 +585,9 @@ def parsed_to_csv(parsed_dict: Dict[str, Any], csv_output_path: str) -> Dict[str
     """
     Convert parsed ENTSO-E data to CSV format.
     
-    Creates a tabular format with:
-    - First column: timestamp
-    - One column per timeseries (named by metadata)
-    
-    Args:
-        parsed_dict: Parsed data dictionary (from parse_entsoe_xml)
-        csv_output_path: Path to save the CSV file
-        
-    Returns:
-        Dictionary with CSV export info (columns, rows count)
+    Creates a tabular format where columns correspond to unique data streams.
+    A stream is defined by its TimeSeries metadata plus any point-level 
+    differentiators (like imbalance price categories).
     """
     timeseries_list = parsed_dict.get('timeseries', [])
     
@@ -590,43 +597,80 @@ def parsed_to_csv(parsed_dict: Dict[str, Any], csv_output_path: str) -> Dict[str
         csv_path.parent.mkdir(parents=True, exist_ok=True)
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['timestamp'])  # Header only
+            writer.writerow(['timestamp'])
         return {'columns': ['timestamp'], 'rows': 0, 'path': str(csv_path)}
     
-    # Generate column names for each timeseries
-    column_names = ['timestamp']
-    ts_columns = {}  # Map timeseries index to column name
+    # Pass 1: Discover all unique data streams and collect data
+    doc_metadata = parsed_dict.get('documentInfo', {})
+    data_by_timestamp = {} # timestamp -> {stream_id: value}
+    stream_metadata = {}   # stream_id -> combined_metadata_dict
     
-    for i, ts in enumerate(timeseries_list):
-        col_name = _generate_column_name(ts, i)
-        # Handle duplicate column names
+    for ts_idx, ts in enumerate(timeseries_list):
+        # Base metadata for this TimeSeries (no periods)
+        base_meta = {k: v for k, v in ts.items() if k != 'periods'}
+        
+        for period in ts.get('periods', []):
+            for point in period.get('points', []):
+                timestamp = point.get('timestamp')
+                if not timestamp:
+                    continue
+                
+                # Determine stream identity
+                # Start with TS index to separate multiple TS objects
+                id_parts = [str(ts_idx)]
+                
+                # Check for point-level differentiators (e.g. imbalance category)
+                point_diff = None
+                if 'imbalancePriceCategory' in point:
+                    point_diff = point['imbalancePriceCategory']
+                    id_parts.append(point_diff)
+                
+                stream_id = "_".join(id_parts)
+                
+                # Initialize stream metadata for naming
+                if stream_id not in stream_metadata:
+                    meta = base_meta.copy()
+                    if point_diff:
+                        meta['imbalancePriceCategory'] = point_diff
+                    stream_metadata[stream_id] = meta
+                
+                # Collect value
+                value = _get_value_from_point(point)
+                if timestamp not in data_by_timestamp:
+                    data_by_timestamp[timestamp] = {}
+                
+                data_by_timestamp[timestamp][stream_id] = value
+
+    # Pass 2: Generate column names from discovered streams
+    # Sort streams consistently (numerically by TS index, then by diff)
+    def stream_sort_key(s):
+        parts = s.split('_')
+        try:
+            return [int(parts[0])] + parts[1:]
+        except ValueError:
+            return [parts[0]] + parts[1:]
+    
+    sorted_stream_ids = sorted(stream_metadata.keys(), key=stream_sort_key)
+    
+    column_names = ['timestamp']
+    stream_to_col = {}
+    
+    for stream_id in sorted_stream_ids:
+        meta = stream_metadata[stream_id]
+        ts_idx = int(stream_id.split('_')[0])
+        col_name = _generate_column_name(meta, ts_idx, doc_metadata)
+        
+        # Deduplicate column names
         original_name = col_name
         counter = 1
         while col_name in column_names:
             col_name = f"{original_name}_{counter}"
             counter += 1
+            
         column_names.append(col_name)
-        ts_columns[i] = col_name
+        stream_to_col[stream_id] = col_name
     
-    # Collect all data points by timestamp
-    data_by_timestamp = {}
-    
-    for i, ts in enumerate(timeseries_list):
-        col_name = ts_columns[i]
-        for period in ts.get('periods', []):
-            for point in period.get('points', []):
-                timestamp = point.get('timestamp', '')
-                if not timestamp:
-                    continue
-                
-                value = _get_value_from_point(point)
-                
-                if timestamp not in data_by_timestamp:
-                    data_by_timestamp[timestamp] = {}
-                
-                data_by_timestamp[timestamp][col_name] = value
-    
-    # Sort timestamps and write CSV
+    # Pass 3: Sort timestamps and write CSV
     sorted_timestamps = sorted(data_by_timestamp.keys())
     
     csv_path = Path(csv_output_path)
@@ -634,16 +678,13 @@ def parsed_to_csv(parsed_dict: Dict[str, Any], csv_output_path: str) -> Dict[str
     
     with open(csv_path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        
-        # Write header
         writer.writerow(column_names)
         
-        # Write data rows
         for timestamp in sorted_timestamps:
             row = [timestamp]
             ts_data = data_by_timestamp[timestamp]
-            for col in column_names[1:]:  # Skip timestamp column
-                value = ts_data.get(col, '')
+            for stream_id in sorted_stream_ids:
+                value = ts_data.get(stream_id, '')
                 row.append(value if value is not None else '')
             writer.writerow(row)
     

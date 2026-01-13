@@ -44,7 +44,7 @@ class VLLMServer:
             max_model_len=16384,
             gpu_memory_utilization=0.95,
             enforce_eager=False,
-            enable_prefix_caching=True,
+            enable_prefix_caching=False,
             download_dir=CACHE_DIR,
             disable_log_stats=False,
         )
@@ -63,24 +63,18 @@ class VLLMServer:
             body = await request.json()
             messages = body.get("messages", [])
             temperature = body.get("temperature", 0.1)
-            # Ensure max_tokens is reasonable
-            max_tokens = min(body.get("max_tokens", 4096), 2048)
+            max_tokens = min(body.get("max_tokens", 1024), 1024)  # Short output for JSON
 
             print(f"🔹 Processing {len(messages)} messages...")
 
-            # Enforce JSON in the prompt itself
-            system_msg = "You are a helpful assistant. You must respond with valid JSON only. Do not use markdown blocks."
-            if not any(m.get("role") == "system" for m in messages):
-                messages.insert(0, {"role": "system", "content": system_msg})
-
+            # Build prompt from messages (system prompt comes from backend)
             prompt = self._build_prompt(messages)
-            if body.get("response_format", {}).get("type") == "json_object":
-                prompt += "\n\nRespond with valid JSON only."
 
             sampling_params = SamplingParams(
                 temperature=temperature, 
                 max_tokens=max_tokens,
-                stop=["<|im_end|>"]  # Explicitly stop to avoid run-on
+                stop=["<|im_end|>"],  # Explicitly stop to avoid run-on
+                repetition_penalty=1.1,
             )
             request_id = str(uuid.uuid4())
 
