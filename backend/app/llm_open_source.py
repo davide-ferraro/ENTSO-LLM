@@ -25,12 +25,6 @@ def _resolve_endpoint(base_url: str) -> str:
     """Resolve the LLM API endpoint URL."""
     normalized = base_url.rstrip("/")
     if "modal.run" in normalized:
-        if normalized.endswith("/chat/completions"):
-            normalized = normalized[: -len("/chat/completions")]
-        if normalized.endswith("/chat"):
-            normalized = normalized[: -len("/chat")]
-        if normalized.endswith("/v1"):
-            normalized = normalized[: -len("/v1")]
         return normalized
     if normalized.endswith("/chat/completions"):
         return normalized
@@ -92,8 +86,12 @@ def _parse_router_response(content: str) -> List[str]:
 
 
 def _build_headers() -> Tuple[str, dict]:
-    base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
-    endpoint = _resolve_endpoint(base_url)
+    chat_url_override = os.getenv("OSS_LLM_CHAT_URL")
+    if chat_url_override:
+        endpoint = _resolve_endpoint(chat_url_override)
+    else:
+        base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
+        endpoint = _resolve_endpoint(base_url)
     api_key = os.getenv("OSS_LLM_API_KEY")
 
     headers = {}
