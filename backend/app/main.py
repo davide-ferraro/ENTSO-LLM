@@ -204,7 +204,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
             if provider in {"oss", "open-source", "open_source", "open"}:
-                status_task = asyncio.create_task(asyncio.to_thread(get_model_status_oss))
+                status_task = asyncio.create_task(asyncio.to_thread(get_model_status_oss, timeout=5))
                 model_ready: bool | None = None
                 try:
                     model_ready = await asyncio.wait_for(status_task, timeout=0.5)
@@ -214,7 +214,11 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                         {"message": f"Loading {model_name} for the first time"},
                     )
                     await asyncio.sleep(0)
-                    model_ready = await status_task
+                    try:
+                        model_ready = await asyncio.wait_for(status_task, timeout=5)
+                    except asyncio.TimeoutError:
+                        status_task.cancel()
+                        model_ready = None
 
                 if model_ready is None:
                     yield send_event("status", {"message": "Finding the right endpoint"})
