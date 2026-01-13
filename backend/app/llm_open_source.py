@@ -25,6 +25,12 @@ def _resolve_endpoint(base_url: str) -> str:
     """Resolve the LLM API endpoint URL."""
     normalized = base_url.rstrip("/")
     if "modal.run" in normalized:
+        if normalized.endswith("/chat/completions"):
+            normalized = normalized[: -len("/chat/completions")]
+        if normalized.endswith("/chat"):
+            normalized = normalized[: -len("/chat")]
+        if normalized.endswith("/v1"):
+            normalized = normalized[: -len("/v1")]
         return normalized
     if normalized.endswith("/chat/completions"):
         return normalized
@@ -35,6 +41,8 @@ def _resolve_endpoint(base_url: str) -> str:
 
 def _resolve_status_endpoint(base_url: str) -> str:
     normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat"):
+        normalized = normalized[: -len("/chat")]
     if normalized.endswith("/chat/completions"):
         normalized = normalized[: -len("/chat/completions")]
     if normalized.endswith("/v1"):
@@ -96,8 +104,12 @@ def _build_headers() -> Tuple[str, dict]:
 
 
 def get_model_status(timeout: float = 300) -> Optional[bool]:
-    base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
-    status_endpoint = _resolve_status_endpoint(base_url)
+    status_override = os.getenv("OSS_LLM_STATUS_URL")
+    if status_override:
+        status_endpoint = status_override.rstrip("/")
+    else:
+        base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
+        status_endpoint = _resolve_status_endpoint(base_url)
     _, headers = _build_headers()
     try:
         response = requests.get(status_endpoint, headers=headers, timeout=timeout)
