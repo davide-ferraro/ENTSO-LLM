@@ -134,6 +134,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     return ChatResponse(
         conversation_id=conversation.id,
         request_payload=llm_response.requests,
+        router_endpoints=llm_response.router_endpoints,
         results=results,
         summary=execution["summary"],
         files=[
