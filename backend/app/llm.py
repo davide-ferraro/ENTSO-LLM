@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import requests
 
-from backend.app.llm_context import build_context
+from backend.app.llm_context import build_generator_context, build_router_context
 from backend.app.llm_utils import LLMError, LLMResponse, extract_json, parse_requests
 from backend.app.llm_open_source import generate_requests as generate_requests_open_source
 
@@ -26,31 +26,99 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
         raise LLMError("OPENAI_API_KEY is not set.")
 
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-    system_prompt = build_context(message, history)
 
-    messages = [{"role": "system", "content": system_prompt}]
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": message})
+    selected_endpoints = router_pass(message)
+    requests_list, content = generator_pass(message, history, selected_endpoints)
 
-    response = requests.post(
+    return LLMResponse(
+        requests=requests_list,
+        raw_message=content,
+        router_endpoints=selected_endpoints,
+    )
+
+
+def _parse_router_response(content: str) -> List[str]:
+    try:
+        parsed = extract_json(content)
+        endpoints = parsed.get("endpoints", [])
+        if endpoints:
+            return endpoints
+    except Exception:
+        pass
+
+    import re
+
+    matches = re.findall(r"E\d+", content)
+    if matches:
+        return matches[:2]
+    return ["E10"]
+
+
+def router_pass(message: str) -> List[str]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise LLMError("OPENAI_API_KEY is not set.")
+
+    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+
+    router_context = build_router_context(message)
+    router_messages = [
+        {"role": "system", "content": router_context},
+        {"role": "user", "content": message},
+    ]
+
+    router_response = requests.post(
         OPENAI_API_URL,
         headers={"Authorization": f"Bearer {api_key}"},
         json={
             "model": model,
-            "messages": messages,
+            "messages": router_messages,
             "response_format": {"type": "json_object"},
             "temperature": 0.2,
         },
         timeout=120,
     )
 
-    if response.status_code != 200:
-        raise LLMError(f"OpenAI API error: {response.status_code} {response.text}")
+    if router_response.status_code != 200:
+        raise LLMError(f"OpenAI API error: {router_response.status_code} {router_response.text}")
 
-    data = response.json()
-    content = data["choices"][0]["message"]["content"]
+    router_content = router_response.json()["choices"][0]["message"]["content"]
+    return _parse_router_response(router_content)
+
+
+def generator_pass(
+    message: str,
+    history: List[Dict[str, str]] | None,
+    selected_endpoints: List[str],
+) -> tuple[List[Dict[str, Any]], str]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise LLMError("OPENAI_API_KEY is not set.")
+
+    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+
+    generator_context = build_generator_context(message, selected_endpoints)
+    generator_messages = [{"role": "system", "content": generator_context}]
+    if history:
+        generator_messages.extend(history)
+    generator_messages.append({"role": "user", "content": message})
+
+    generator_response = requests.post(
+        OPENAI_API_URL,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": model,
+            "messages": generator_messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        },
+        timeout=120,
+    )
+
+    if generator_response.status_code != 200:
+        raise LLMError(f"OpenAI API error: {generator_response.status_code} {generator_response.text}")
+
+    content = generator_response.json()["choices"][0]["message"]["content"]
     parsed = extract_json(content)
     requests_list = parse_requests(parsed)
-
-    return LLMResponse(requests=requests_list, raw_message=content)
+    return requests_list, content

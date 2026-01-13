@@ -43,6 +43,7 @@ class RequestResult(BaseModel):
 class ChatResponse(BaseModel):
     conversation_id: str
     request_payload: List[Dict[str, Any]]
+    router_endpoints: List[str]
     results: List[RequestResult]
     summary: Dict[str, Any]
     files: List[FileLink]

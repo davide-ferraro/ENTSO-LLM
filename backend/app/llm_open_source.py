@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -31,6 +31,15 @@ def _resolve_endpoint(base_url: str) -> str:
     if normalized.endswith("/v1"):
         return f"{normalized}/chat/completions"
     return f"{normalized}/v1/chat/completions"
+
+
+def _resolve_status_endpoint(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        normalized = normalized[: -len("/chat/completions")]
+    if normalized.endswith("/v1"):
+        normalized = normalized[: -len("/v1")]
+    return f"{normalized}/status"
 
 
 def _call_llm(endpoint: str, headers: dict, messages: List[Dict[str, str]], temperature: float = 0.1) -> str:
@@ -74,13 +83,7 @@ def _parse_router_response(content: str) -> List[str]:
     return ["E10"]
 
 
-def generate_requests(message: str, history: List[Dict[str, str]] | None = None) -> LLMResponse:
-    """
-    Generate ENTSO-E API requests using Two-Pass LLM architecture.
-    
-    Pass 1 (Router): Select relevant endpoint(s)
-    Pass 2 (Generator): Generate JSON using selected examples
-    """
+def _build_headers() -> Tuple[str, dict]:
     base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
     endpoint = _resolve_endpoint(base_url)
     api_key = os.getenv("OSS_LLM_API_KEY")
@@ -89,39 +92,71 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # =========================================================================
-    # PASS 1: ROUTER - Select the relevant endpoint(s)
-    # =========================================================================
+    return endpoint, headers
+
+
+def get_model_status(timeout: float = 300) -> Optional[bool]:
+    base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
+    status_endpoint = _resolve_status_endpoint(base_url)
+    _, headers = _build_headers()
+    try:
+        response = requests.get(status_endpoint, headers=headers, timeout=timeout)
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        return bool(data.get("loaded"))
+    except requests.RequestException:
+        return None
+
+
+def router_pass(message: str) -> List[str]:
+    endpoint, headers = _build_headers()
     print("🔹 Pass 1: Routing to select endpoint...")
-    
+
     router_context = build_router_context(message)
     router_messages = [
         {"role": "system", "content": router_context},
-        {"role": "user", "content": message}
+        {"role": "user", "content": message},
     ]
-    
+
     router_response = _call_llm(endpoint, headers, router_messages, temperature=0.1)
     print(f"📍 Router response: {router_response[:200]}...")
-    
+
     selected_endpoints = _parse_router_response(router_response)
     print(f"✅ Selected endpoints: {selected_endpoints}")
+    return selected_endpoints
 
-    # =========================================================================
-    # PASS 2: GENERATOR - Generate JSON using selected examples
-    # =========================================================================
+
+def generator_pass(message: str, selected_endpoints: List[str]) -> Tuple[List[Dict[str, Any]], str]:
+    endpoint, headers = _build_headers()
     print("🔹 Pass 2: Generating JSON request...")
-    
+
     generator_context = build_generator_context(message, selected_endpoints)
     generator_messages = [
         {"role": "system", "content": generator_context},
-        {"role": "user", "content": message}
+        {"role": "user", "content": message},
     ]
-    
+
     generator_response = _call_llm(endpoint, headers, generator_messages, temperature=0.1)
     print(f"📥 Generator response:\n{generator_response}\n")
-    
-    # Parse the final JSON response
+
     parsed = extract_json(generator_response)
     requests_list = parse_requests(parsed)
+    return requests_list, generator_response
 
-    return LLMResponse(requests=requests_list, raw_message=generator_response)
+
+def generate_requests(message: str, history: List[Dict[str, str]] | None = None) -> LLMResponse:
+    """
+    Generate ENTSO-E API requests using Two-Pass LLM architecture.
+
+    Pass 1 (Router): Select relevant endpoint(s)
+    Pass 2 (Generator): Generate JSON using selected examples
+    """
+    selected_endpoints = router_pass(message)
+    requests_list, generator_response = generator_pass(message, selected_endpoints)
+
+    return LLMResponse(
+        requests=requests_list,
+        raw_message=generator_response,
+        router_endpoints=selected_endpoints,
+    )
