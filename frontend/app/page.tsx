@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const MODEL_NAME = process.env.NEXT_PUBLIC_LLM_MODEL_NAME ?? "Qwen/Qwen2.5-7B-Instruct";
 
 type FileLink = {
   id: string;
@@ -436,6 +437,7 @@ export default function HomePage() {
     setInput("");
     setStatus("loading");
     setError(null);
+    scheduleStatusUpdates();
 
     try {
       const history = messages
