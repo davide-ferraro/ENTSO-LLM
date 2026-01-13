@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import requests
 
@@ -68,7 +68,7 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
         },
         timeout=120,
     )
-
+    
     if generator_response.status_code != 200:
         raise LLMError(f"OpenAI API error: {generator_response.status_code} {generator_response.text}")
 
