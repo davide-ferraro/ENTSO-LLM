@@ -46,6 +46,7 @@ def _resolve_status_endpoint(base_url: str) -> str:
 
 def _call_llm(endpoint: str, headers: dict, messages: List[Dict[str, str]], temperature: float = 0.1) -> str:
     """Make a single LLM API call and return the content."""
+    print(f"🚀 Sending request to LLM Endpoint: {endpoint}")
     response = requests.post(
         endpoint,
         headers=headers,
@@ -56,11 +57,13 @@ def _call_llm(endpoint: str, headers: dict, messages: List[Dict[str, str]], temp
         timeout=300,
     )
 
+    print(f"🚀 Response Status: {response.status_code}")
     if response.status_code != 200:
         print(f"❌ LLM API Error: {response.status_code} - {response.text}")
         raise LLMError(f"LLM API error: {response.status_code} {response.text}")
 
     data = response.json()
+    print(f"🚀 Response Data Keys: {list(data.keys())}")
     return data["choices"][0]["message"]["content"]
 
 
@@ -87,6 +90,7 @@ def _parse_router_response(content: str) -> List[str]:
 
 def _build_headers() -> Tuple[str, dict]:
     chat_url_override = os.getenv("OSS_LLM_CHAT_URL")
+    print(f"DEBUG: OSS_LLM_CHAT_URL found: '{chat_url_override}'")
     if chat_url_override:
         endpoint = _resolve_endpoint(chat_url_override)
     else:
@@ -109,11 +113,14 @@ def get_model_status(timeout: float = 300) -> Optional[bool]:
         base_url = os.getenv("OSS_LLM_BASE_URL", DEFAULT_OSS_BASE_URL)
         status_endpoint = _resolve_status_endpoint(base_url)
     _, headers = _build_headers()
+    print(f"DEBUG: Checking status at {status_endpoint}...")
     try:
         response = requests.get(status_endpoint, headers=headers, timeout=timeout)
+        print(f"DEBUG: Status check response: {response.status_code}")
         if response.status_code != 200:
             return None
         data = response.json()
+        print(f"DEBUG: Status JSON: {data}")
         return bool(data.get("loaded"))
     except requests.RequestException:
         return None

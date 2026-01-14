@@ -207,7 +207,8 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 status_task = asyncio.create_task(asyncio.to_thread(get_model_status_oss, timeout=5))
                 model_ready: bool | None = None
                 try:
-                    model_ready = await asyncio.wait_for(status_task, timeout=0.5)
+                    # shield() prevents status_task from being cancelled when wait_for times out
+                    model_ready = await asyncio.wait_for(asyncio.shield(status_task), timeout=0.5)
                 except asyncio.TimeoutError:
                     yield send_event(
                         "status",
@@ -215,7 +216,8 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     )
                     await asyncio.sleep(0)
                     try:
-                        model_ready = await asyncio.wait_for(status_task, timeout=5)
+                        # Wait again for the SAME task
+                        model_ready = await asyncio.wait_for(asyncio.shield(status_task), timeout=5)
                     except asyncio.TimeoutError:
                         status_task.cancel()
                         model_ready = None
@@ -232,12 +234,14 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     yield send_event("status", {"message": "Finding the right endpoint"})
                     await asyncio.sleep(0)
                 else:
+                    print("DEBUG: Model is ready. Proceeding.")
                     yield send_event("status", {"message": "Finding the right endpoint"})
                     await asyncio.sleep(0)
             else:
                 yield send_event("status", {"message": "Finding the right endpoint"})
                 await asyncio.sleep(0)
 
+            print("DEBUG: Calling router_pass...")
             if provider in {"oss", "open-source", "open_source", "open"}:
                 selected_endpoints = await asyncio.to_thread(router_pass_oss, request.message)
             else:
