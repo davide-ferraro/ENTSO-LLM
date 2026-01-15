@@ -307,9 +307,28 @@ export default function HomePage() {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [statusMessage, setStatusMessage] = useState("Ready for a new prompt.");
+  const [statusMessage, setStatusMessage] = useState("Ready!");
+  const [loadingDots, setLoadingDots] = useState("");
   const [error, setError] = useState<string | null>(null);
   const statusEntryRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (status !== "loading") {
+      setLoadingDots("");
+      return;
+    }
+
+    const frames = [".", "..", "..."];
+    let index = 0;
+    setLoadingDots(frames[index]);
+
+    const intervalId = window.setInterval(() => {
+      index = (index + 1) % frames.length;
+      setLoadingDots(frames[index]);
+    }, 450);
+
+    return () => window.clearInterval(intervalId);
+  }, [status]);
 
   const updateStatusEntry = (nextMessage: string) => {
     const statusId = statusEntryRef.current;
@@ -359,7 +378,7 @@ export default function HomePage() {
       };
       setMessages((prev) => [...prev, assistantEntry]);
       setStatus("idle");
-      setStatusMessage("Ready for a new prompt.");
+      setStatusMessage("Ready!");
     }
     if (event === "error" && typeof data.detail === "string") {
       setStatus("error");
@@ -429,13 +448,14 @@ export default function HomePage() {
     const statusEntry: ChatEntry = {
       id: `${Date.now()}-status`,
       role: "assistant",
-      content: "Starting request…",
+      content: "Starting request",
       kind: "status",
     };
     statusEntryRef.current = statusEntry.id;
     setMessages((prev) => [...prev, userEntry, statusEntry]);
     setInput("");
     setStatus("loading");
+    setStatusMessage(statusEntry.content);
     setError(null);
 
     try {
@@ -527,13 +547,16 @@ export default function HomePage() {
             </article>
           )}
 
-          {messages.map((entry) => (
-            <article key={entry.id} className={`chat-message ${entry.role} ${entry.kind ?? ""}`}>
+          {messages.map((entry) => {
+            const isActiveStatus = status === "loading" && entry.kind === "status" && entry.id === statusEntryRef.current;
+            const statusContent = isActiveStatus ? `${entry.content}${loadingDots}` : entry.content;
+            return (
+              <article key={entry.id} className={`chat-message ${entry.role} ${entry.kind ?? ""}`}>
               <div className="message-meta">
                 <span className="role-tag">{entry.role === "user" ? "You" : "ENTSO-E"}</span>
               </div>
               <div className="message-body">
-                {entry.kind === "status" && <p className="muted">{entry.content}</p>}
+                {entry.kind === "status" && <p className="muted">{statusContent}</p>}
                 {entry.kind === "router" && (
                   <>
                     <p>{entry.content}</p>
@@ -586,12 +609,13 @@ export default function HomePage() {
                 )}
               </div>
             </article>
-          ))}
+            );
+          })}
         </section>
 
         <footer className="composer">
-          {status === "loading" && <span className="status-text">{statusMessage}</span>}
-          {status === "idle" && <span className="status-text">Ready for a new prompt.</span>}
+          {status === "loading" && <span className="status-text">{`${statusMessage}${loadingDots}`}</span>}
+          {status === "idle" && <span className="status-text">Ready!</span>}
           {status === "error" && <span className="status-text error-text">{error}</span>}
           <div className="composer-bar">
             <span className="composer-icon">🔎</span>

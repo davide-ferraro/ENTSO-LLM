@@ -44,7 +44,6 @@ from backend.app.models import (
 from backend.app.storage import RESULTS_DIR, StoredFile, ensure_storage, get_storage_backend, register_files
 from backend.app.llm_open_source import (
     generator_pass as generator_pass_oss,
-    get_model_status as get_model_status_oss,
     router_pass as router_pass_oss,
 )
 
@@ -203,47 +202,29 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             else:
                 model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-            if provider in {"oss", "open-source", "open_source", "open"}:
-                status_task = asyncio.create_task(asyncio.to_thread(get_model_status_oss, timeout=5))
-                model_ready: bool | None = None
-                try:
-                    # shield() prevents status_task from being cancelled when wait_for times out
-                    model_ready = await asyncio.wait_for(asyncio.shield(status_task), timeout=0.5)
-                except asyncio.TimeoutError:
-                    yield send_event(
-                        "status",
-                        {"message": f"Loading {model_name} for the first time"},
-                    )
-                    await asyncio.sleep(0)
-                    try:
-                        # Wait again for the SAME task
-                        model_ready = await asyncio.wait_for(asyncio.shield(status_task), timeout=5)
-                    except asyncio.TimeoutError:
-                        status_task.cancel()
-                        model_ready = None
-
-                if model_ready is None:
-                    yield send_event("status", {"message": "Finding the right endpoint"})
-                    await asyncio.sleep(0)
-                elif not model_ready:
-                    yield send_event(
-                        "status",
-                        {"message": f"Loading {model_name} for the first time"},
-                    )
-                    await asyncio.sleep(0)
-                    yield send_event("status", {"message": "Finding the right endpoint"})
-                    await asyncio.sleep(0)
-                else:
-                    print("DEBUG: Model is ready. Proceeding.")
-                    yield send_event("status", {"message": "Finding the right endpoint"})
-                    await asyncio.sleep(0)
-            else:
-                yield send_event("status", {"message": "Finding the right endpoint"})
-                await asyncio.sleep(0)
+            yield send_event("status", {"message": "Finding the right endpoint"})
+            await asyncio.sleep(0)
 
             print("DEBUG: Calling router_pass...")
             if provider in {"oss", "open-source", "open_source", "open"}:
-                selected_endpoints = await asyncio.to_thread(router_pass_oss, request.message)
+                router_task = asyncio.create_task(asyncio.to_thread(router_pass_oss, request.message))
+                try:
+                    selected_endpoints = await asyncio.wait_for(asyncio.shield(router_task), timeout=1.5)
+                except asyncio.TimeoutError:
+                    yield send_event(
+                        "status",
+                        {"message": f"Loading {model_name} for the first time, Estimated time:2 minutes"},
+                    )
+                    await asyncio.sleep(0)
+                    try:
+                        selected_endpoints = await asyncio.wait_for(asyncio.shield(router_task), timeout=60)
+                    except asyncio.TimeoutError:
+                        yield send_event(
+                            "status",
+                            {"message": f"Loading {model_name} for the first time, Estimated time:1 minute"},
+                        )
+                        await asyncio.sleep(0)
+                        selected_endpoints = await router_task
             else:
                 selected_endpoints = await asyncio.to_thread(router_pass, request.message)
 

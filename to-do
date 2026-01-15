@@ -1,0 +1,10 @@
+V - add ... when generating
+two llm models start when sending a message and opening for the first time
+add plotly to show results
+produce results "503 Service Temporarily Unavailable" when ENTSO-E not available
+modal doesn't have to turn off qwen
+don't say "load for the first time" if the model is already deployed
+Re-make UI
+try better LLM
+Restructure the project
+put frontend and backend on modal

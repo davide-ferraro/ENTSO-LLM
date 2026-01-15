@@ -35,7 +35,7 @@ class VLLMServer:
         self.model_ready = False
 
     @modal.enter()
-    def start_engine(self):
+    async def start_engine(self):
         from vllm.engine.arg_utils import AsyncEngineArgs
         from vllm.engine.async_llm_engine import AsyncLLMEngine
 
@@ -54,6 +54,7 @@ class VLLMServer:
         )
         # Using the standard AsyncLLMEngine.from_engine_args is correct, 
         # but we need to ensure we don't accidentally close the loop.
+        # Ensure the engine loop is created on the active event loop.
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
         self.model_ready = True
         print("✅ Model loaded successfully!")
