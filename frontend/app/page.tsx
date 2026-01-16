@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
@@ -26,24 +27,42 @@ type RequestResult = {
   api_message?: string | null;
   files: FileLink[];
   csv_info?: Record<string, unknown> | null;
+  is_combined?: boolean | null;
 };
 
 type ChatEntry = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  kind?: "status" | "router" | "request";
-  routerEndpoints?: string[];
+  kind?: "status" | "router" | "request" | "chart";
+  routerEndpoints?: RouterEndpoint[];
   requestPayload?: Array<Record<string, unknown>>;
   codeLegend?: CodeLegendEntry[];
   results?: RequestResult[];
   summary?: Record<string, unknown>;
   files?: FileLink[];
+  chartSource?: ChartSource;
 };
 
 type CsvPreview = {
   headers: string[];
   rows: string[][];
+};
+
+type CsvSeries = {
+  x: Array<string | Date>;
+  series: Array<{ name: string; values: Array<number | null> }>;
+};
+
+type ChartSource = {
+  title: string;
+  csvFile: FileLink;
+  jsonFile?: FileLink;
+};
+
+type RouterEndpoint = {
+  id: string;
+  label?: string;
 };
 
 type CodeLegendEntry = {
@@ -149,6 +168,156 @@ const parseCsvPreview = (text: string, maxRows = 8): CsvPreview => {
   const headers = lines[0].split(",");
   const rows = lines.slice(1, maxRows + 1).map((line) => line.split(","));
   return { headers, rows };
+};
+
+const parseCsvSeries = (text: string): CsvSeries | null => {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) {
+    return null;
+  }
+  const headers = lines[0].split(",");
+  const rows = lines.slice(1).map((line) => line.split(","));
+  const xIndex = Math.max(
+    headers.findIndex((header) => /time|date/i.test(header)),
+    0,
+  );
+  const seriesIndices = headers.map((_, index) => index).filter((index) => index !== xIndex);
+  if (seriesIndices.length === 0) {
+    return null;
+  }
+
+  const x: Array<string | Date> = [];
+  const series = seriesIndices.map((index) => ({ name: headers[index], values: [] as Array<number | null> }));
+
+  rows.forEach((row) => {
+    const rawX = row[xIndex] ?? "";
+    if (!rawX) {
+      return;
+    }
+    const parsedDate = new Date(rawX);
+    x.push(Number.isNaN(parsedDate.getTime()) ? rawX : parsedDate);
+    series.forEach((serie, seriesIdx) => {
+      const cell = row[seriesIndices[seriesIdx]] ?? "";
+      const value = Number.parseFloat(cell);
+      serie.values.push(Number.isFinite(value) ? value : null);
+    });
+  });
+
+  return { x, series };
+};
+
+const extractTimeseriesUnit = (data: unknown): string => {
+  if (!data || typeof data !== "object") {
+    return "";
+  }
+  const record = data as Record<string, unknown>;
+  const timeseries = record.timeseries ?? record.timeSeries ?? record.time_series;
+  if (Array.isArray(timeseries) && timeseries.length > 0) {
+    const unit = (timeseries[0] as Record<string, unknown>).unit;
+    if (typeof unit === "string") {
+      return unit;
+    }
+  }
+  return "";
+};
+
+const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+
+const ChartMessage = ({ source }: { source: ChartSource }) => {
+  const [csvRaw, setCsvRaw] = useState<string>("");
+  const [jsonData, setJsonData] = useState<unknown>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadCsv = async () => {
+      const response = await fetch(`${API_BASE}${source.csvFile.url}`);
+      const text = await response.text();
+      if (mounted) {
+        setCsvRaw(text);
+      }
+    };
+    loadCsv();
+    return () => {
+      mounted = false;
+    };
+  }, [source.csvFile.url]);
+
+  useEffect(() => {
+    if (!source.jsonFile) {
+      return;
+    }
+    let mounted = true;
+    const loadJson = async () => {
+      const response = await fetch(`${API_BASE}${source.jsonFile?.url}`);
+      const data = await response.json();
+      if (mounted) {
+        setJsonData(data);
+      }
+    };
+    loadJson();
+    return () => {
+      mounted = false;
+    };
+  }, [source.jsonFile?.url]);
+
+  const chartData = useMemo(() => parseCsvSeries(csvRaw), [csvRaw]);
+  const unitLabel = useMemo(() => extractTimeseriesUnit(jsonData), [jsonData]);
+
+  if (!csvRaw) {
+    return <p className="muted">Loading chart…</p>;
+  }
+
+  if (!chartData) {
+    return <p className="muted">Chart preview not available.</p>;
+  }
+
+  const palette = ["#0B3D91", "#8B0000", "#1B7F3A", "#5B2A86", "#2A6F97", "#F4A259", "#6C757D"];
+  const traces = chartData.series.map((serie, index) => ({
+    x: chartData.x,
+    y: serie.values,
+    type: "scatter",
+    mode: "lines",
+    name: serie.name,
+    line: {
+      color: palette[index % palette.length],
+      width: index === 0 ? 2.5 : 2,
+    },
+  }));
+
+  return (
+    <div className="chart-preview">
+      <Plot
+        data={traces}
+        layout={{
+          autosize: true,
+          height: 360,
+          margin: { l: 64, r: 24, t: 24, b: 56 },
+          paper_bgcolor: "transparent",
+          plot_bgcolor: "transparent",
+          xaxis: {
+            type: "date",
+            title: "Time",
+            rangeselector: {
+              buttons: [
+                { count: 6, label: "6h", step: "hour", stepmode: "backward" },
+                { count: 1, label: "1d", step: "day", stepmode: "backward" },
+                { count: 7, label: "1w", step: "day", stepmode: "backward" },
+                { count: 1, label: "1m", step: "month", stepmode: "backward" },
+                { step: "all", label: "All" },
+              ],
+            },
+            rangeslider: { visible: true },
+          },
+          yaxis: {
+            title: unitLabel ? `Unit: ${unitLabel}` : "Value",
+            automargin: true,
+          },
+          legend: { orientation: "h", y: -0.25 },
+        }}
+        config={{ displaylogo: false, responsive: true }}
+      />
+    </div>
+  );
 };
 
 const buildCodeLegend = (requests: Array<Record<string, unknown>> | undefined): CodeLegendEntry[] => {
@@ -346,12 +515,18 @@ export default function HomePage() {
       updateStatusEntry(data.message);
     }
     if (event === "router" && Array.isArray(data.endpoints)) {
+      const endpoints = (data.endpoints as Array<string | RouterEndpoint>).map((endpoint) => {
+        if (typeof endpoint === "string") {
+          return { id: endpoint };
+        }
+        return endpoint;
+      });
       const routerEntry: ChatEntry = {
         id: `${Date.now()}-router`,
         role: "assistant",
         content: "Router selected the following endpoint(s):",
         kind: "router",
-        routerEndpoints: data.endpoints as string[],
+        routerEndpoints: endpoints,
       };
       setMessages((prev) => [...prev, routerEntry]);
     }
@@ -376,7 +551,28 @@ export default function HomePage() {
         summary: data.summary as Record<string, unknown>,
         files: data.files as FileLink[],
       };
-      setMessages((prev) => [...prev, assistantEntry]);
+      const results = assistantEntry.results ?? [];
+      const combinedResult = results.find((result) => result.is_combined);
+      const preferredResult = combinedResult ?? results.find((result) => result.files?.some((file) => file.type === "csv"));
+      const csvFile = preferredResult?.files?.find((file) => file.type === "csv");
+      const jsonFile = preferredResult?.files?.find((file) => file.type === "json");
+
+      if (csvFile) {
+        const chartEntry: ChatEntry = {
+          id: `${Date.now()}-chart`,
+          role: "assistant",
+          content: "Generated chart from results.",
+          kind: "chart",
+          chartSource: {
+            title: preferredResult?.name ?? "Results chart",
+            csvFile,
+            jsonFile,
+          },
+        };
+        setMessages((prev) => [...prev, assistantEntry, chartEntry]);
+      } else {
+        setMessages((prev) => [...prev, assistantEntry]);
+      }
       setStatus("idle");
       setStatusMessage("Ready!");
     }
@@ -553,17 +749,23 @@ export default function HomePage() {
             return (
               <article key={entry.id} className={`chat-message ${entry.role} ${entry.kind ?? ""}`}>
               <div className="message-meta">
-                <span className="role-tag">{entry.role === "user" ? "You" : "ENTSO-E"}</span>
+                <span className="role-tag">{entry.role === "user" ? "You" : "ENTSO-LLM"}</span>
               </div>
               <div className="message-body">
                 {entry.kind === "status" && <p className="muted">{statusContent}</p>}
+                {entry.kind === "chart" && entry.chartSource && (
+                  <>
+                    <p>{entry.content}</p>
+                    <ChartMessage source={entry.chartSource} />
+                  </>
+                )}
                 {entry.kind === "router" && (
                   <>
                     <p>{entry.content}</p>
                     <div className="tag-list">
                       {entry.routerEndpoints?.map((endpoint) => (
-                        <span key={endpoint} className="tag">
-                          {endpoint}
+                        <span key={endpoint.id} className="tag">
+                          {endpoint.label ? `${endpoint.id} — ${endpoint.label}` : endpoint.id}
                         </span>
                       ))}
                     </div>

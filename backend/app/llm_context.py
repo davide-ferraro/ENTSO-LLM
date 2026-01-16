@@ -9,7 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import List
+from typing import Dict, List
+import re
 
 
 DOCS_ROOT = Path(__file__).resolve().parents[2] / "docs"
@@ -133,6 +134,23 @@ def _load_examples_menu() -> str:
     if EXAMPLES_MENU.exists():
         return EXAMPLES_MENU.read_text(encoding="utf-8")
     return ""
+
+
+@lru_cache(maxsize=1)
+def load_endpoint_titles() -> Dict[str, str]:
+    """Load endpoint titles from the examples menu."""
+    menu = _load_examples_menu()
+    titles: Dict[str, str] = {}
+    for line in menu.splitlines():
+        line = line.strip()
+        if not line.startswith("## "):
+            continue
+        # Format: ## E11 — Actual Total Load (6.1.A)
+        match = re.match(r"^##\s+(E\d+)\s+(?:—|-)\s+(.+)$", line)
+        if match:
+            code, title = match.groups()
+            titles[code] = title.strip()
+    return titles
 
 
 def build_router_context(user_query: str) -> str:

@@ -1,9 +1,7 @@
 V - add ... when generating
-two llm models start when sending a message and opening for the first time
+V - two llm models start when sending a message and opening for the first time
 add plotly to show results
-produce results "503 Service Temporarily Unavailable" when ENTSO-E not available
-modal doesn't have to turn off qwen
-don't say "load for the first time" if the model is already deployed
+V - produce results "503 Service Temporarily Unavailable" when ENTSO-E not available (to test)
 Re-make UI
 try better LLM
 Restructure the project

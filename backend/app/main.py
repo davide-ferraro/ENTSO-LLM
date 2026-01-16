@@ -32,6 +32,7 @@ from backend.app.database import (
 )
 from backend.app.entsoe import EntsoeError, run_requests
 from backend.app.llm import LLMError, generate_requests, generator_pass, router_pass
+from backend.app.llm_context import load_endpoint_titles
 from backend.app.models import (
     ChatRequest,
     ChatResponse,
@@ -228,7 +229,12 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             else:
                 selected_endpoints = await asyncio.to_thread(router_pass, request.message)
 
-            yield send_event("router", {"endpoints": selected_endpoints})
+            titles = load_endpoint_titles()
+            endpoints_payload = [
+                {"id": endpoint, "label": titles.get(endpoint)}
+                for endpoint in selected_endpoints
+            ]
+            yield send_event("router", {"endpoints": endpoints_payload})
             await asyncio.sleep(0)
             yield send_event("status", {"message": "Writing the request"})
             await asyncio.sleep(0)

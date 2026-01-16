@@ -34,6 +34,7 @@ class RequestResult(BaseModel):
     api_message: Optional[str] = None
     files: List[FileLink] = []
     is_historical: Optional[bool] = None
+    is_combined: Optional[bool] = None
     chunks_total: Optional[int] = None
     chunks_success: Optional[int] = None
     chunks_with_data: Optional[int] = None

@@ -31,8 +31,7 @@ CACHE_DIR = "/root/.cache/huggingface"
     volumes={CACHE_DIR: model_cache},
 )
 class VLLMServer:
-    def __init__(self):
-        self.model_ready = False
+    model_ready: bool = False
 
     @modal.enter()
     async def start_engine(self):

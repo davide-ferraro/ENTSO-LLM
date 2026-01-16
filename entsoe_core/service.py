@@ -168,6 +168,13 @@ def _base_result(name: str, params: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _is_html_error(status_code: int | None, content: bytes) -> bool:
+    if status_code == 503:
+        return True
+    snippet = content[:1024].lower()
+    return b"<html" in snippet and b"service temporarily unavailable" in snippet
+
+
 def process_request(params: Dict[str, str], name: str, config: EntsoeConfig) -> Dict[str, Any]:
     """Process a single request: fetch XML, save it, parse to JSON and CSV."""
     result = _base_result(name, params)
@@ -178,6 +185,17 @@ def process_request(params: Dict[str, str], name: str, config: EntsoeConfig) -> 
     response_content = response_data.get("content")
     if response_content is None:
         result["error"] = response_data.get("error") or "request_failed"
+        return result
+
+    if _is_html_error(result.get("status_code"), response_content):
+        message = "ENTSO-E APIs returns: 503 Service Temporarily Unavailable. Please, try again later"
+        xml_filename = f"{name}.xml"
+        xml_path = config.xml_dir / xml_filename
+        with open(xml_path, "wb") as file_handle:
+            file_handle.write(response_content)
+        result["files"].append({"type": "xml", "path": str(xml_path)})
+        result["error"] = message
+        result["api_message"] = message
         return result
 
     xml_filename = f"{name}.xml"
@@ -248,6 +266,12 @@ def process_historical_request(
         if response_content is None:
             continue
 
+        if _is_html_error(response_data.get("status_code"), response_content):
+            message = "ENTSO-E APIs returns: 503 Service Temporarily Unavailable. Please, try again later"
+            result["error"] = message
+            result["api_message"] = message
+            break
+
         xml_path = xml_subfolder / f"{year_label}.xml"
         with open(xml_path, "wb") as file_handle:
             file_handle.write(response_content)
@@ -256,6 +280,9 @@ def process_historical_request(
 
         if i < len(chunks):
             time.sleep(config.request_delay)
+
+    if result.get("error"):
+        return result
 
     if result["chunks_success"] == 0:
         result["error"] = "all_chunks_failed"
