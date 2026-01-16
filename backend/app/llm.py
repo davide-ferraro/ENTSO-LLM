@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 import requests
 
+from backend.app import llm_gemini
 from backend.app.llm_context import build_generator_context, build_router_context
 from backend.app.llm_utils import LLMError, LLMResponse, extract_json, parse_requests
 from backend.app.llm_open_source import generate_requests as generate_requests_open_source
@@ -17,9 +18,11 @@ DEFAULT_MODEL = "gpt-4o-mini"
 
 
 def generate_requests(message: str, history: List[Dict[str, str]] | None = None) -> LLMResponse:
-    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    provider = (os.getenv("LLM_PROVIDER", "oss") or "oss").strip().lower()
     if provider in {"oss", "open-source", "open_source", "open"}:
         return generate_requests_open_source(message, history=history)
+    if provider in {"gemini"}:
+        return llm_gemini.generate_requests(message, history=history)
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:

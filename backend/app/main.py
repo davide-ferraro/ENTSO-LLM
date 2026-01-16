@@ -32,6 +32,7 @@ from backend.app.database import (
 )
 from backend.app.entsoe import EntsoeError, run_requests
 from backend.app.llm import LLMError, generate_requests, generator_pass, router_pass
+from backend.app import llm_gemini
 from backend.app.llm_context import load_endpoint_titles
 from backend.app.models import (
     ChatRequest,
@@ -197,17 +198,20 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
         try:
             history_payload = [msg.model_dump() for msg in request.history or []]
-            provider = os.getenv("LLM_PROVIDER", "openai").lower()
-            if provider in {"oss", "open-source", "open_source", "open"}:
-                model_name = os.getenv("OSS_LLM_MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
-            else:
-                model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            provider = (os.getenv("LLM_PROVIDER", "oss") or "oss").strip().lower()
+            use_oss = provider in {"oss", "open-source", "open_source", "open"}
+            use_gemini = provider in {"gemini"}
+            model_name = (
+                os.getenv("GEMINI_MODEL", "gemini-1.5-pro-latest")
+                if use_gemini
+                else os.getenv("OSS_LLM_MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
+            )
 
             yield send_event("status", {"message": "Finding the right endpoint"})
             await asyncio.sleep(0)
 
             print("DEBUG: Calling router_pass...")
-            if provider in {"oss", "open-source", "open_source", "open"}:
+            if use_oss:
                 router_task = asyncio.create_task(asyncio.to_thread(router_pass_oss, request.message))
                 try:
                     selected_endpoints = await asyncio.wait_for(asyncio.shield(router_task), timeout=1.5)
@@ -226,6 +230,8 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                         )
                         await asyncio.sleep(0)
                         selected_endpoints = await router_task
+            elif use_gemini:
+                selected_endpoints = await asyncio.to_thread(llm_gemini.router_pass, request.message)
             else:
                 selected_endpoints = await asyncio.to_thread(router_pass, request.message)
 
@@ -239,9 +245,13 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             yield send_event("status", {"message": "Writing the request"})
             await asyncio.sleep(0)
 
-            if provider in {"oss", "open-source", "open_source", "open"}:
+            if use_oss:
                 requests_list, raw_message = await asyncio.to_thread(
                     generator_pass_oss, request.message, selected_endpoints
+                )
+            elif use_gemini:
+                requests_list, raw_message = await asyncio.to_thread(
+                    llm_gemini.generator_pass, request.message, history_payload, selected_endpoints
                 )
             else:
                 requests_list, raw_message = await asyncio.to_thread(

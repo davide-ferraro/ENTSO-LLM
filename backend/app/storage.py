@@ -11,7 +11,12 @@ from uuid import uuid4
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 
-STORAGE_ROOT = Path(__file__).resolve().parents[1] / "storage"
+DEFAULT_STORAGE_ROOT = Path(__file__).resolve().parents[1] / "storage"
+STORAGE_ROOT = Path(
+    os.getenv("ENTSO_STORAGE_ROOT")
+    or os.getenv("MODAL_VOLUME_PATH")
+    or DEFAULT_STORAGE_ROOT
+)
 RESULTS_DIR = STORAGE_ROOT / "results"
 
 

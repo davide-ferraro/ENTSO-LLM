@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
-const MODEL_NAME = process.env.NEXT_PUBLIC_LLM_MODEL_NAME ?? "Qwen/Qwen2.5-7B-Instruct";
 
 type FileLink = {
   id: string;
@@ -480,6 +479,16 @@ export default function HomePage() {
   const [loadingDots, setLoadingDots] = useState("");
   const [error, setError] = useState<string | null>(null);
   const statusEntryRef = useRef<string | null>(null);
+  const userHistory = useMemo(
+    () =>
+      messages
+        .filter((entry) => entry.role === "user")
+        .map((entry, index) => ({
+          id: entry.id,
+          label: entry.content.slice(0, 60) || `Message ${index + 1}`,
+        })),
+    [messages],
+  );
 
   useEffect(() => {
     if (status !== "loading") {
@@ -498,6 +507,22 @@ export default function HomePage() {
 
     return () => window.clearInterval(intervalId);
   }, [status]);
+
+  const handleScrollToMessage = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
+  const handleNewChat = () => {
+    setMessages([]);
+    setInput("");
+    setStatus("idle");
+    setStatusMessage("Ready!");
+    setError(null);
+    statusEntryRef.current = null;
+  };
 
   const updateStatusEntry = (nextMessage: string) => {
     const statusId = statusEntryRef.current;
@@ -656,7 +681,10 @@ export default function HomePage() {
 
     try {
       const history = messages
-        .filter((entry) => entry.kind !== "status" && entry.kind !== "router" && entry.kind !== "request")
+        .filter(
+          (entry) =>
+            entry.kind !== "status" && entry.kind !== "router" && entry.kind !== "request" && entry.kind !== "chart",
+        )
         .map((entry) => ({ role: entry.role, content: entry.content }));
       await streamChat({ message: userEntry.content, history });
     } catch (err) {
@@ -669,153 +697,125 @@ export default function HomePage() {
   return (
     <div className="workspace">
       <aside className="sidebar">
-        <div className="brand">
-          <div className="logo-mark">entsoe</div>
-          <span>Reliable · Sustainable · Connected</span>
+        <div className="sidebar-header">
+          <div className="logo-mark">entso</div>
+          <div>
+            <p className="app-name">ENTSO-LLM</p>
+            <p className="muted small">Gemini-powered</p>
+          </div>
         </div>
-        <nav className="sidebar-nav">
-          <button type="button" className="nav-item active">
-            + New chat
-          </button>
-          <button type="button" className="nav-item">Search chats</button>
-          <button type="button" className="nav-item">Library</button>
-          <button type="button" className="nav-item">Apps</button>
-          <button type="button" className="nav-item">Codex</button>
-          <button type="button" className="nav-item">GPTs</button>
-        </nav>
+        <button type="button" className="primary-button" onClick={handleNewChat}>
+          + New chat
+        </button>
         <div className="sidebar-section">
-          <p className="section-title">Projects</p>
-          <button type="button" className="nav-item">New project</button>
-          <button type="button" className="nav-item">Mathlens</button>
-          <button type="button" className="nav-item">Writing LinkedIn content</button>
-          <button type="button" className="nav-item">Rebase Documentation</button>
-        </div>
-        <div className="sidebar-section">
-          <p className="section-title">Chats</p>
-          <button type="button" className="nav-item">Request Clarification</button>
-          <button type="button" className="nav-item">Push Repo to GitHub</button>
-          <button type="button" className="nav-item">GTM Strategy Review</button>
+          <p className="section-title">Recent prompts</p>
+          {userHistory.length === 0 ? (
+            <p className="muted small">No messages yet.</p>
+          ) : (
+            userHistory.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                className="history-item"
+                onClick={() => handleScrollToMessage(item.id)}
+              >
+                <span className="history-index">{index + 1}</span>
+                <span className="history-text">{item.label}</span>
+              </button>
+            ))
+          )}
         </div>
         <div className="sidebar-footer">
-          <div className="profile">
-            <div className="avatar">DF</div>
-            <div>
-              <strong>Davide Ferraro</strong>
-              <span>Rebase Workspace</span>
-            </div>
-          </div>
-          <button type="button" className="invite">+ Invite team members</button>
+          <p className="muted small">Model: Gemini</p>
         </div>
       </aside>
 
       <main className="main">
-        <header className="topbar">
-          <div className="model-selector">
-            <span className="model-dot" />
-            <span>ChatGPT 5.2</span>
-          </div>
-          <div className="top-actions">
-            <button type="button" className="ghost-button">
-              Share
-            </button>
-            <button type="button" className="ghost-button">⋯</button>
-            <button type="button" className="request-pill">
-              request
-            </button>
-          </div>
-        </header>
-
-        <section className="chat-area">
+        <section className={`chat-area ${messages.length === 0 ? "empty" : ""}`}>
           {messages.length === 0 && (
-            <article className="assistant-message">
+            <article className="assistant-message intro">
               <p>
-                Could you clarify what you mean by <strong>“request”</strong>?
+                Ask ENTSO-LLM anything about ENTSO-E data. I’ll route to the right endpoint and build the request for
+                you.
               </p>
-              <p className="muted">For example, are you trying to:</p>
-              <ul>
-                <li>make a work request (IT, ops, access, budget, etc.)</li>
-                <li>draft a formal request (email or document)</li>
-                <li>request information or a file</li>
-                <li>trigger some internal process at ENTSO-E</li>
-              </ul>
-              <p className="muted">A short sentence with the goal is enough, and I’ll take it from there.</p>
               {status === "error" && <p className="error-text">{error}</p>}
             </article>
           )}
 
           {messages.map((entry) => {
-            const isActiveStatus = status === "loading" && entry.kind === "status" && entry.id === statusEntryRef.current;
+            const isActiveStatus =
+              status === "loading" && entry.kind === "status" && entry.id === statusEntryRef.current;
             const statusContent = isActiveStatus ? `${entry.content}${loadingDots}` : entry.content;
             return (
-              <article key={entry.id} className={`chat-message ${entry.role} ${entry.kind ?? ""}`}>
-              <div className="message-meta">
-                <span className="role-tag">{entry.role === "user" ? "You" : "ENTSO-LLM"}</span>
-              </div>
-              <div className="message-body">
-                {entry.kind === "status" && <p className="muted">{statusContent}</p>}
-                {entry.kind === "chart" && entry.chartSource && (
-                  <>
-                    <p>{entry.content}</p>
-                    <ChartMessage source={entry.chartSource} />
-                  </>
-                )}
-                {entry.kind === "router" && (
-                  <>
-                    <p>{entry.content}</p>
-                    <div className="tag-list">
-                      {entry.routerEndpoints?.map((endpoint) => (
-                        <span key={endpoint.id} className="tag">
-                          {endpoint.label ? `${endpoint.id} — ${endpoint.label}` : endpoint.id}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
-                {entry.kind === "request" && (
-                  <>
-                    <p>{entry.content}</p>
-                    {entry.requestPayload && (
-                      <div className="request-payload">
-                        <pre>{JSON.stringify(entry.requestPayload, null, 2)}</pre>
-                      </div>
-                    )}
-                    {entry.codeLegend && entry.codeLegend.length > 0 && (
-                      <div className="code-legend">
-                        {entry.codeLegend.map((legend) => (
-                          <div key={legend.code} className="legend-row">
-                            <span className="tag">{legend.code}</span>
-                            <span>{legend.description}</span>
-                          </div>
+              <article id={entry.id} key={entry.id} className={`chat-message ${entry.role} ${entry.kind ?? ""}`}>
+                <div className="message-meta">
+                  <span className="role-tag">{entry.role === "user" ? "You" : "ENTSO-LLM"}</span>
+                </div>
+                <div className="message-body">
+                  {entry.kind === "status" && <p className="muted">{statusContent}</p>}
+                  {entry.kind === "chart" && entry.chartSource && (
+                    <>
+                      <p>{entry.content}</p>
+                      <ChartMessage source={entry.chartSource} />
+                    </>
+                  )}
+                  {entry.kind === "router" && (
+                    <>
+                      <p>{entry.content}</p>
+                      <div className="tag-list">
+                        {entry.routerEndpoints?.map((endpoint) => (
+                          <span key={endpoint.id} className="tag">
+                            {endpoint.label ? `${endpoint.id} — ${endpoint.label}` : endpoint.id}
+                          </span>
                         ))}
                       </div>
-                    )}
-                  </>
-                )}
-                {!entry.kind && <p>{entry.content}</p>}
-                {entry.summary && (
-                  <div className="summary-grid">
-                    {Object.entries(entry.summary).map(([key, value]) => (
-                      <div key={key}>
-                        <span>{key.replaceAll("_", " ")}</span>
-                        <strong>{String(value)}</strong>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {entry.results && (
-                  <div className="results">
-                    {entry.results.map((result) => (
-                      <ResultCard key={result.name} result={result} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </article>
+                    </>
+                  )}
+                  {entry.kind === "request" && (
+                    <>
+                      <p>{entry.content}</p>
+                      {entry.requestPayload && (
+                        <div className="request-payload">
+                          <pre>{JSON.stringify(entry.requestPayload, null, 2)}</pre>
+                        </div>
+                      )}
+                      {entry.codeLegend && entry.codeLegend.length > 0 && (
+                        <div className="code-legend">
+                          {entry.codeLegend.map((legend) => (
+                            <div key={legend.code} className="legend-row">
+                              <span className="tag">{legend.code}</span>
+                              <span>{legend.description}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {!entry.kind && <p>{entry.content}</p>}
+                  {entry.summary && (
+                    <div className="summary-grid">
+                      {Object.entries(entry.summary).map(([key, value]) => (
+                        <div key={key}>
+                          <span>{key.replaceAll("_", " ")}</span>
+                          <strong>{String(value)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {entry.results && (
+                    <div className="results">
+                      {entry.results.map((result) => (
+                        <ResultCard key={result.name} result={result} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </article>
             );
           })}
         </section>
 
-        <footer className="composer">
+        <footer className={`composer ${messages.length === 0 ? "composer-floating" : ""}`}>
           {status === "loading" && <span className="status-text">{`${statusMessage}${loadingDots}`}</span>}
           {status === "idle" && <span className="status-text">Ready!</span>}
           {status === "error" && <span className="status-text error-text">{error}</span>}
@@ -827,15 +827,12 @@ export default function HomePage() {
               onChange={(event) => setInput(event.target.value)}
               rows={1}
             />
-            <button type="button" className="mic-button" aria-label="Record">
-              🎙️
-            </button>
             <button type="button" className="send-button" onClick={handleSend} disabled={status === "loading"}>
               ➤
             </button>
           </div>
           <p className="footnote">
-            ChatGPT can make mistakes. ENTSO-E does not use your data to train its models.
+            Gemini can make mistakes. ENTSO-E does not use your data to train its models.
           </p>
         </footer>
       </main>

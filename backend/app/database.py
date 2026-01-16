@@ -52,6 +52,42 @@ def get_connection() -> Generator[sqlite3.Connection, None, None]:
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
+    # Ensure tables exist even if startup didn't run
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversations (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            request_payload TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS messages (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(conversation_id) REFERENCES conversations(id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS files (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            storage_key TEXT NOT NULL,
+            local_path TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(conversation_id) REFERENCES conversations(id)
+        )
+        """
+    )
     try:
         yield connection
         connection.commit()

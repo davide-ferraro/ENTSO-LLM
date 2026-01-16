@@ -1,12 +1,14 @@
 """
-Modal deployment for vLLM serving Qwen2.5-7B-Instruct.
+Modal deployment for vLLM serving Qwen 2.5 32B Instruct.
 """
+import os
 import modal
 from fastapi import Request
 
-MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+MODEL_ID = os.getenv("VLLM_MODEL_ID", "Qwen/Qwen2.5-3B-Instruct")
 MODEL_REVISION = "main"
-GPU_CONFIG = "L4"
+# Modal deprecation: prefer the string GPU selector.
+GPU_CONFIG = os.getenv("MODAL_GPU", "A100-40GB")
 
 vllm_image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -15,11 +17,13 @@ vllm_image = (
         "fastapi[standard]",
         "huggingface_hub",
         "hf_transfer",
+        "transformers",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
 )
 
-app = modal.App("qwen-7b-vllm")
+app = modal.App("qwen-2-5-32b-vllm")
 model_cache = modal.Volume.from_name("llm-model-cache", create_if_missing=True)
 CACHE_DIR = "/root/.cache/huggingface"
 
@@ -37,15 +41,32 @@ class VLLMServer:
     async def start_engine(self):
         from vllm.engine.arg_utils import AsyncEngineArgs
         from vllm.engine.async_llm_engine import AsyncLLMEngine
+        from transformers import AutoTokenizer
 
         self.model_ready = False
         print(f"🚀 Loading model {MODEL_ID}...")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_ID,
+            revision=MODEL_REVISION,
+            cache_dir=CACHE_DIR,
+        )
+
+        requested_len = int(os.getenv("VLLM_MAX_MODEL_LEN", "32768"))
+        # Qwen2.5-3B-Instruct derives 32k max from config; keep a safe default.
+        if requested_len > 32768 and os.getenv("VLLM_ALLOW_LONG_MAX_MODEL_LEN") != "1":
+            print(
+                f"⚠️ VLLM_MAX_MODEL_LEN={requested_len} exceeds model config; clamping to 32768. "
+                "Set VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 to override (not recommended unless you know it's safe)."
+            )
+            requested_len = 32768
+
         engine_args = AsyncEngineArgs(
             model=MODEL_ID,
             revision=MODEL_REVISION,
             tensor_parallel_size=1,
-            max_model_len=16384,
-            gpu_memory_utilization=0.95,
+            max_model_len=requested_len,
+            gpu_memory_utilization=float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", "0.90")),
+            dtype=os.getenv("VLLM_DTYPE", "auto"),
             enforce_eager=False,
             enable_prefix_caching=False,
             download_dir=CACHE_DIR,
@@ -79,10 +100,16 @@ class VLLMServer:
             # Build prompt from messages (system prompt comes from backend)
             prompt = self._build_prompt(messages)
 
+            stop_tokens = []
+            eos_token = getattr(getattr(self, "tokenizer", None), "eos_token", None)
+            if isinstance(eos_token, str) and eos_token:
+                stop_tokens.append(eos_token)
+            stop_tokens.extend(["<|eot_id|>", "<|im_end|>"])
+
             sampling_params = SamplingParams(
                 temperature=temperature, 
                 max_tokens=max_tokens,
-                stop=["<|im_end|>"],  # Explicitly stop to avoid run-on
+                stop=stop_tokens or None,
                 repetition_penalty=1.1,
             )
             request_id = str(uuid.uuid4())
@@ -114,6 +141,10 @@ class VLLMServer:
             return Response(content=f"Internal Server Error: {str(e)}", status_code=500)
 
     def _build_prompt(self, messages: list) -> str:
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "apply_chat_template"):
+            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
         prompt_parts = []
         for msg in messages:
             role = msg.get("role", "user")

@@ -1,8 +1,55 @@
 V - add ... when generating
 V - two llm models start when sending a message and opening for the first time
-add plotly to show results
+V - add plotly to show results
 V - produce results "503 Service Temporarily Unavailable" when ENTSO-E not available (to test)
 Re-make UI
 try better LLM
 Restructure the project
 put frontend and backend on modal
+
+
+My next proposals for you are:
+- Change the UI make it as similar as possible to chat GPT but using the current colors and background without losing any functionality
+- The chatGT-like UI will start with the chat in the middle of the screen like in chat GPT and then will move the text form down after the first user message
+- Remove any clickable element that has no actual events binded to them, and remove any hover effect on them
+- The side bar will be containing all the previous messages that the user sent to the chat, click on any of them to reach that message in the chat
+- Instead of using Qwen from Modal, let's use Gemini APIs to interrogate Gemini on the users messages
+- Prepare the frontend and the backend to be able to run from Modal
+- Save any request and file generated in a modal volume, where there will be a json file containing the request from the user, the endpoint found, the request generated, and a request_ID. In another json file we have the request_ID and the actual Data, still in json format. If you don't like this, make a schema yourself for the data.
+
+
+Now, for all this to work, you need first to evaluate the general structure of the project and re-structure it if needed. The project is full of .py files and other stuff that maybe is not needed, but also, frontend and backend probably need some restructuring to be able to run from Modal. Also, since we use from now Gemini APIs we don't need to use Qwen anymore.
+
+Plan your work and proceed step by step in the order you think it makes more sense
+
+_______-
+
+Ok questions:
+
+- How do I find  ENTSO_STORAGE_ROOT or MODAL_VOLUME_PATH? I'd like the code to create the volumes with an "if volume doesn't exist" and having the roots and the paths internally to pass to next to the other pieces of code. I don't want to put this in .env possibly 
+- I just runned a test and Qwen from my modal is being called, so why is it written GPT O4-mini in the status? Also, I want to call Gemini through gemini API, not qwen from my modal
+- I couldn-t deploy backend on modal
+
+(.venv) davide@Davides-MacBook-Air backend % modal deploy modal_backend.py
+╭─────────────── Traceback (most recent call last) ───────────────╮
+│ /Users/davide/Documents/ENTSO-LLM/ENTSO-LLM/backend/.venv/lib/p │
+│ ython3.13/site-packages/modal/cli/import_refs.py:98 in          │
+│ import_file_or_module                                           │
+│                                                                 │
+│    97 │   │   │   assert spec.loader                            │
+│ ❱  98 │   │   │   spec.loader.exec_module(module)               │
+│    99 │   │   except Exception as exc:                          │
+│ <frozen importlib._bootstrap_external>:1018 in exec_module      │
+│                                                                 │
+│ <frozen importlib._bootstrap_external>:1155 in get_code         │
+│                                                                 │
+│ <frozen importlib._bootstrap_external>:1213 in get_data         │
+│                                                                 │
+╰─────────────────────────────────────────────────────────────────╯
+FileNotFoundError: [Errno 2] No such file or directory: 
+'/Users/davide/Documents/ENTSO-LLM/ENTSO-LLM/backend/modal_backend.
+py'
+
+
+- I also want the frontend on modal
+
