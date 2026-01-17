@@ -11,7 +11,9 @@
 
 body {
   margin: 0;
-  background: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.15) 1px, transparent 0) 0 0 / 22px 22px,
+  background:
+    url("/background.png") center top / cover no-repeat,
+    radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.15) 1px, transparent 0) 0 0 / 22px 22px,
     #f7f7fb;
   color: #111827;
 }
@@ -23,8 +25,8 @@ body {
 }
 
 .sidebar {
-  background: linear-gradient(180deg, #0f1f3f 0%, #1b2b57 100%);
-  color: #e2e8f0;
+  background: #e1adff;
+  color: #111827;
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
@@ -36,29 +38,46 @@ body {
 }
 
 .sidebar-header {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 10px;
+  display: flex;
   align-items: center;
+  justify-content: center;
 }
 
-.logo-mark {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 1px;
+.logo-block {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px 6px 6px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+}
+
+.logo-block img {
+  width: 100%;
+  max-width: 180px;
+  height: auto;
+  object-fit: contain;
 }
 
 .app-name {
   margin: 0;
   font-weight: 700;
   letter-spacing: 0.4px;
+  color: #111827;
+}
+
+.under-logo {
+  font-size: 14px;
+  color: #111827;
 }
 
 .section-title {
   font-size: 12px;
   margin: 4px 10px;
   text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(17, 24, 39, 0.6);
   letter-spacing: 0.6px;
 }
 
@@ -69,8 +88,8 @@ body {
 
 .primary-button {
   border: none;
-  background: #ffffff;
-  color: #0f172a;
+  background: #111827;
+  color: #facc15;
   padding: 10px 14px;
   border-radius: 12px;
   font-size: 14px;
@@ -80,28 +99,38 @@ body {
 }
 
 .ghost-button {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.12);
-  color: #e8f0ff;
-  padding: 12px 14px;
-  border-radius: 14px;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  background: rgba(17, 24, 39, 0.06);
+  color: #111827;
+  padding: 10px 12px;
+  border-radius: 12px;
   font-size: 13px;
   cursor: pointer;
-  text-align: center;
-  letter-spacing: 0.2px;
-  transition: background 120ms ease, transform 120ms ease, border-color 120ms ease;
-  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  letter-spacing: 0.1px;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease, transform 100ms ease;
+  overflow: hidden;
 }
 
 .ghost-button:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(17, 24, 39, 0.12);
+  border-color: rgba(17, 24, 39, 0.22);
   transform: translateY(-1px);
 }
 
 .ghost-button:active {
   transform: translateY(0);
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(17, 24, 39, 0.1);
+}
+
+.ghost-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.25);
 }
 
 .sidebar-footer {
@@ -111,7 +140,7 @@ body {
   position: sticky;
   bottom: 0;
   padding: 12px 0 8px;
-  background: linear-gradient(180deg, rgba(15, 31, 63, 0.4) 0%, rgba(27, 43, 87, 0.0) 60%, rgba(27, 43, 87, 0.0) 100%);
+  background: transparent;
 }
 
 .history-item {
@@ -121,9 +150,9 @@ body {
   align-items: center;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
+  background: rgba(17, 24, 39, 0.06);
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  color: #111827;
   cursor: pointer;
   text-align: left;
 }
@@ -134,7 +163,7 @@ body {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(17, 24, 39, 0.1);
   font-weight: 700;
   font-size: 12px;
 }
@@ -163,6 +192,7 @@ body {
   margin: 0 auto;
   justify-items: center;
   align-content: start;
+  padding-top: 24px;
 }
 
 .assistant-message,
@@ -409,7 +439,7 @@ body {
   margin: 0 auto;
   position: sticky;
   bottom: 0;
-  background: #f7f7fb;
+  background: transparent;
   z-index: 5;
 }
 
@@ -419,7 +449,7 @@ body {
 
 .status-text {
   font-size: 12px;
-  color: #64748b;
+  color: #e2e8f0;
 }
 
 .composer-bar {
@@ -427,10 +457,11 @@ body {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   padding: 10px 16px;
-  box-shadow: 0 18px 28px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 18px 28px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
 }
 
 .composer-bar textarea {
@@ -444,7 +475,7 @@ body {
 
 .composer-icon {
   font-size: 16px;
-  color: #94a3b8;
+  color: #e2e8f0;
 }
 
 .send-button {

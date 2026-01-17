@@ -787,10 +787,9 @@ export default function HomePage() {
     <div className="workspace">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div className="logo-mark">entso</div>
-          <div>
-            <p className="app-name">ENTSO-LLM</p>
-            <p className="muted small">Gemini-powered</p>
+          <div className="logo-block">
+            <img src="/entsoe_logo.svg" alt="ENTSO-E logo" />
+            <p className="app-name under-logo">ENTSO-LLM</p>
           </div>
         </div>
         <button type="button" className="primary-button" onClick={handleNewChat}>
@@ -934,7 +933,7 @@ export default function HomePage() {
             </button>
           </div>
           <p className="footnote">
-            Gemini can make mistakes. ENTSO-E does not use your data to train its models.
+            Use the Guide if the generated requests are not the ones expected.
           </p>
         </footer>
       </main>
