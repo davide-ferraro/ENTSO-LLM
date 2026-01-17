@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import uuid
 from typing import Any, Dict, List
 
 import asyncio
@@ -33,7 +34,7 @@ from backend.app.database import (
 from backend.app.entsoe import EntsoeError, run_requests
 from backend.app.llm import LLMError, generate_requests, generator_pass, router_pass
 from backend.app import llm_gemini
-from backend.app.llm_context import load_endpoint_titles
+from backend.app.llm_context import load_endpoint_titles, load_endpoint_article_map
 from backend.app.models import (
     ChatRequest,
     ChatResponse,
@@ -197,6 +198,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             }
 
         try:
+            trace_id = str(uuid.uuid4())
             history_payload = [msg.model_dump() for msg in request.history or []]
             provider = (os.getenv("LLM_PROVIDER", "oss") or "oss").strip().lower()
             use_oss = provider in {"oss", "open-source", "open_source", "open"}
@@ -204,7 +206,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             model_name = (
                 os.getenv("GEMINI_MODEL", "gemini-1.5-pro-latest")
                 if use_gemini
-                else os.getenv("OSS_LLM_MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
+                else os.getenv("OSS_LLM_MODEL_NAME", "Qwen/Qwen2.5-32B-Instruct")
             )
 
             yield send_event("status", {"message": "Finding the right endpoint"})
@@ -212,33 +214,24 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
             print("DEBUG: Calling router_pass...")
             if use_oss:
-                router_task = asyncio.create_task(asyncio.to_thread(router_pass_oss, request.message))
-                try:
-                    selected_endpoints = await asyncio.wait_for(asyncio.shield(router_task), timeout=1.5)
-                except asyncio.TimeoutError:
-                    yield send_event(
-                        "status",
-                        {"message": f"Loading {model_name} for the first time, Estimated time:2 minutes"},
-                    )
-                    await asyncio.sleep(0)
-                    try:
-                        selected_endpoints = await asyncio.wait_for(asyncio.shield(router_task), timeout=60)
-                    except asyncio.TimeoutError:
-                        yield send_event(
-                            "status",
-                            {"message": f"Loading {model_name} for the first time, Estimated time:1 minute"},
-                        )
-                        await asyncio.sleep(0)
-                        selected_endpoints = await router_task
+                router_task = asyncio.create_task(asyncio.to_thread(router_pass_oss, request.message, trace_id))
+                selected_endpoints = await asyncio.wait_for(asyncio.shield(router_task), timeout=10)
             elif use_gemini:
                 selected_endpoints = await asyncio.to_thread(llm_gemini.router_pass, request.message)
             else:
                 selected_endpoints = await asyncio.to_thread(router_pass, request.message)
 
+            article_map = load_endpoint_article_map()
+            normalized_endpoints = [article_map.get(ep, ep) for ep in selected_endpoints if ep]
+
+            if not normalized_endpoints:
+                yield send_event("error", {"detail": "Router did not return a valid endpoint."})
+                return
+
             titles = load_endpoint_titles()
             endpoints_payload = [
-                {"id": endpoint, "label": titles.get(endpoint)}
-                for endpoint in selected_endpoints
+                {"id": ep, "label": titles.get(ep)}
+                for ep in normalized_endpoints
             ]
             yield send_event("router", {"endpoints": endpoints_payload})
             await asyncio.sleep(0)
@@ -246,22 +239,25 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             await asyncio.sleep(0)
 
             if use_oss:
-                requests_list, raw_message = await asyncio.to_thread(
-                    generator_pass_oss, request.message, selected_endpoints
+                generator_task = asyncio.create_task(
+                    asyncio.to_thread(generator_pass_oss, request.message, normalized_endpoints, trace_id)
                 )
+                requests_list, raw_message = await asyncio.wait_for(asyncio.shield(generator_task), timeout=120)
             elif use_gemini:
-                requests_list, raw_message = await asyncio.to_thread(
-                    llm_gemini.generator_pass, request.message, history_payload, selected_endpoints
+                generator_task = asyncio.create_task(
+                    asyncio.to_thread(llm_gemini.generator_pass, request.message, history_payload, normalized_endpoints)
                 )
+                requests_list, raw_message = await asyncio.wait_for(asyncio.shield(generator_task), timeout=120)
             else:
-                requests_list, raw_message = await asyncio.to_thread(
-                    generator_pass, request.message, history_payload, selected_endpoints
+                generator_task = asyncio.create_task(
+                    asyncio.to_thread(generator_pass, request.message, history_payload, normalized_endpoints)
                 )
+                requests_list, raw_message = await asyncio.wait_for(asyncio.shield(generator_task), timeout=120)
 
             llm_response = {
                 "requests": requests_list,
                 "raw_message": raw_message,
-                "router_endpoints": selected_endpoints,
+                "router_endpoints": normalized_endpoints,
             }
 
             yield send_event("request", {"request_payload": requests_list})

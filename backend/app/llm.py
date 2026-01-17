@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict, List
 
 import requests
@@ -43,18 +44,25 @@ def generate_requests(message: str, history: List[Dict[str, str]] | None = None)
 def _parse_router_response(content: str) -> List[str]:
     try:
         parsed = extract_json(content)
-        endpoints = parsed.get("endpoints", [])
-        if endpoints:
-            return endpoints
+        if isinstance(parsed, dict):
+            if "endpoint" in parsed and isinstance(parsed["endpoint"], str):
+                return [parsed["endpoint"]]
+            endpoints = parsed.get("endpoints")
+            if isinstance(endpoints, list) and endpoints:
+                return [str(ep) for ep in endpoints]
     except Exception:
         pass
 
     import re
 
+    article_matches = re.findall(r"\b\d+\.\d+(?:\.[A-Z0-9]+)?\b", content)
+    if article_matches:
+        return [article_matches[0]]
+
     matches = re.findall(r"E\d+", content)
     if matches:
-        return matches[:2]
-    return ["E10"]
+        return matches[:1]
+    return []
 
 
 def router_pass(message: str) -> List[str]:
@@ -65,6 +73,14 @@ def router_pass(message: str) -> List[str]:
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
 
     router_context = build_router_context(message)
+    if os.getenv("DEBUG_ROUTER_CONTEXT") == "1":
+        debug_path = Path("router_prompt_content.txt")
+        try:
+            debug_path.write_text(router_context, encoding="utf-8")
+            print(f"Router context written to {debug_path}")
+        except Exception as exc:
+            print(f"⚠️ Failed to write router context to file: {exc}")
+
     router_messages = [
         {"role": "system", "content": router_context},
         {"role": "user", "content": message},
@@ -77,7 +93,7 @@ def router_pass(message: str) -> List[str]:
             "model": model,
             "messages": router_messages,
             "response_format": {"type": "json_object"},
-            "temperature": 0.2,
+            "temperature": 0.0,
         },
         timeout=120,
     )
@@ -86,7 +102,10 @@ def router_pass(message: str) -> List[str]:
         raise LLMError(f"OpenAI API error: {router_response.status_code} {router_response.text}")
 
     router_content = router_response.json()["choices"][0]["message"]["content"]
-    return _parse_router_response(router_content)
+    endpoints = _parse_router_response(router_content)
+    if not endpoints:
+        raise LLMError("Router did not return a valid endpoint. Please try again.")
+    return endpoints
 
 
 def generator_pass(

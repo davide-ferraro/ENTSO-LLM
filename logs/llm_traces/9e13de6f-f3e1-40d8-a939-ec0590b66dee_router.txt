@@ -1,0 +1,254 @@
+# Router Prompt
+# ENTSO-E Endpoint Router (Article Codes)
+
+You are a strict router. Using only the user message and `examples_menu.md`, select **exactly one** ENTSO-E endpoint by article code (e.g., `6.1.A`, `14.1.D`, `12.1.G`, `17.1.F`, `8.2.1`, `9.2.1`). You never generate parameters or data.
+
+## Decision Order (follow exactly)
+1) DATA DOMAIN (Market / Load / Generation / Transmission / Outages / Balancing / Master Data / OMI)  
+2) DATA NATURE (Actual / Forecast / Prices / Volumes / Capacity / Bids / Infrastructure / Financial / Reference)  
+3) DATA GRANULARITY (Aggregated vs per-unit; per-border vs total; real-time vs historical)  
+Then pick the **single most specific** article code that satisfies all “WHEN TO USE” and no “DO NOT USE IF” rules in `examples_menu.md`.
+
+## Routing Rules
+- Route by **intent**, not keywords. Ignore geography, dates, EIC codes, parameters.
+- Apply **DO NOT USE IF** rules aggressively: if any condition matches, eliminate that endpoint.
+- Prefer specificity (renewables over total if stated; per-unit over aggregated if stated; actual over forecast if time unspecified).
+- Always return **one** article code. No lists, no fallbacks.
+
+## Output (JSON only)
+```json
+{ "endpoint": "<ARTICLE_CODE>" }
+```
+No markdown, no explanations, no extra fields.
+
+
+## Endpoint Menu
+# ENTSO-E API Examples Menu (Router-Optimized)
+
+> **Purpose (Router Only):**
+> Pick the correct endpoint ID(s) from keywords and intent.
+> Do **NOT** decide EIC codes or fill parameters here — generator handles that.
+
+---
+
+## Global Router Rules
+
+1. Pick **1 endpoint** (no multiples).
+2. Decide by **intent** first (prices vs load vs generation vs flows vs outages vs balancing).
+3. Then by **time nature** (actual vs forecast vs capacity vs schedules).
+4. Geography is **NOT routing** (country/zone is chosen later).
+5. “Between two areas/borders” → prefer endpoints with **out_Domain → in_Domain**.
+6. “In one zone” → prefer endpoints with **one domain param** or **in=out**.
+
+---
+
+## ✅ Working vs ⚠️ Sparse Endpoints
+
+- ✅ Generally working across many zones: most endpoints except the list below.
+- ⚠️ Sparse / “no data” commonly observed:
+
+
+
+
+
+
+# Market — Capacity, Allocations, Prices
+
+---
+
+## 12.1.B - Total Nominated Capacity
+Domain: Market / Transmission — Nature: Scheduled / Nominated Capacity — Use when User asks for **nominated capacity** between two areas; Mentions: nominated schedules, nominated capacity, border nominations; Questions about **how much capacity was nominated** on a border — Do not use if User asks for offered capacity (use E02, E05, E09); User asks for physical flows (use E20); User asks for prices (use E10);
+
+## 11.1 - Implicit Allocations – Offered Transfer Capacity
+Domain: Market / Transmission — Nature: Offered Capacity (Implicit Allocation) — Use when User asks for **available transfer capacity** in **day-ahead or intraday market coupling**; Mentions: implicit allocation, market coupling, ATC, NTC offered; Asks “how much capacity is available” before trading — Do not use if User asks for explicit auctions (use E05); User asks for already allocated or used capacity (use E04 or E06); User asks for physical flows (use E20);
+
+## 12.1.H - Transfer Capacities with Third Countries
+Domain: Market / Transmission — Nature: Offered Capacity (Explicit, Third Countries) — Use when User asks for **transfer capacity with non-EU / third countries**; Mentions: Russia, Ukraine, third country border capacity; Explicit allocation context for non-EU borders — Do not use if Both areas are EU countries (use E02, E05, or E21); User asks for physical flows (use E20);
+
+## 12.1.C - Total Capacity Already Allocated
+Domain: Market / Transmission — Nature: Allocated Capacity (Post-allocation) — Use when User asks how much capacity is **already allocated**; Mentions: allocated capacity, capacity already used by market; Border-focused, post-allocation information — Do not use if User asks for nominated capacity (use E01); User asks for capacity usage (use E06); User asks for offered capacity (use E02 or E05);
+
+## 11.1.A - Explicit Allocations – Offered Transfer Capacity
+Domain: Market / Transmission — Nature: Offered Capacity (Explicit Auctions) — Use when User asks for **explicit auction capacity**; Mentions: explicit allocation, explicit auction, capacity auction; Border capacity not part of implicit market coupling — Do not use if User asks for implicit market coupling capacity (use E02); User asks for allocated or used capacity (use E04 or E06);
+
+## 12.1.A - Explicit Allocations – Use of Transfer Capacity
+Domain: Market / Transmission — Nature: Capacity Usage — Use when User asks how much **explicitly allocated capacity was actually used**; Mentions: capacity usage, used capacity, utilization of allocated capacity — Do not use if User asks how much capacity was offered (use E02 or E05); User asks for nominated capacity (use E01);
+
+## 12.1.A — Explicit Allocations – Auction Revenue
+Domain: Market / Transmission — Nature: Financial / Revenue — Use when User asks about **auction revenue** from capacity auctions; Mentions: auction revenue, border revenue, capacity income — Do not use if User asks for congestion income from implicit markets (use E50); User asks for prices (use E10);
+
+## 12.1.E - Implicit Auction – Net Positions
+Domain: Market — Nature: Net Position (Import / Export) — Use when User asks if an area was **net importer or exporter**; Mentions: net position, net import, net export; Single area focus (not directional flows) — Do not use if User asks for physical flows between areas (use E20); User asks for prices (use E10);
+
+## 11.1 - Continuous Allocations – Offered Transfer Capacity
+Domain: Market / Transmission — Nature: Offered Capacity (Continuous Intraday) — Use when User asks for **continuous intraday capacity**; Mentions: continuous market, XBID, SIDC, intraday continuous capacity — Do not use if User asks for day-ahead capacity (use E02); User asks for explicit auctions (use E05);
+
+## 12.1.D - Day-ahead Energy Prices
+Domain: Prices — Nature: Day-ahead — Use when User asks for **electricity prices**; Mentions: day-ahead prices, spot prices, market prices; Single bidding zone price information — Do not use if User asks for imbalance prices (use E26); User asks for balancing energy prices (use E30); User asks for capacity or flows (use E01–E09 or E20);
+
+## 6.1.A - Actual Total Load
+Domain: Load — Nature: Actual / Realised — Use when User asks for **actual electricity demand or consumption**; Mentions: actual load, realised load, demand, consumption; Historical or past periods (yesterday, last week, last year); User says “historical load” or “actual load” — Do not use if User asks for any kind of forecast (use E12, E13, or E15); User asks for margins between load and generation (use forecast margin endpoint);
+
+## 6.1.B - Day-ahead Total Load Forecast
+Domain: Load — Nature: Forecast (Day-ahead) — Use when User asks for **expected load tomorrow**; Mentions: day-ahead load forecast, expected demand tomorrow; Short-term forward-looking demand — Do not use if User asks for actual / realised load (use E11); User asks for week-ahead or longer forecasts (use E13 or E15);
+
+## E13 — Week-ahead Total Load Forecast (6.1.C)
+Domain: Load — Nature: Forecast (Week-ahead) — Use when User asks for **load forecast for the coming week**; Mentions: week-ahead forecast, weekly load forecast — Do not use if User asks for day-ahead forecast (use E12); User asks for year-ahead or long-term forecast (use E15); User asks for actual load (use E11);
+
+## 6.1.E - Year-ahead Total Load Forecast
+Domain: Load — Nature: Forecast (Year-ahead / Long-term) — Use when User asks for **long-term or yearly load forecast**; Mentions: year-ahead forecast, annual demand forecast; Structural or planning-oriented demand questions — Do not use if User asks for short-term forecasts (use E12 or E13); User asks for actual / historical load (use E11);
+
+## 6.1.A - Actual Total Load (Additional Countries)
+Domain: Load — Nature: Actual / Realised — Use when Same intent as **E11**; User asks for actual load **in countries or zones where E11 examples are sparse**; Typically used as a fallback when E11 returns no data — Do not use if User asks for forecasts (use E12, E13, or E15); User asks for margins or generation-related data
+
+## 14.1.A — Installed Capacity per Production Type
+Domain: Generation — Nature: Structural / Installed Capacity — Use when User asks for **installed generation capacity**; Mentions: installed capacity, generation capacity, capacity by fuel type; Structural, planning, or long-term questions; No specific time resolution required beyond yearly — Do not use if User asks for actual electricity production (use 16.1.A or 16.1.B/C); User asks for generation forecasts (use 14.1.C or 14.1.D);
+
+## 16.1.A — Actual Generation per Generation Unit
+Domain: Generation — Nature: Actual / Realised — Use when User asks for **output of specific power plants**; Mentions: generation unit, power plant, unit-level production; Needs detailed, unit-by-unit generation data — Do not use if User asks for aggregated generation by fuel type (use 16.1.B / 16.1.C); User asks for generation forecasts (use 14.1.C or 14.1.D);
+
+## 16.1.B / 16.1.C — Actual Generation per Production Type
+Domain: Generation — Nature: Actual / Realised — Use when User asks for **generation mix**; Mentions: solar generation, wind generation, nuclear generation, gas generation; Wants aggregated production by fuel or technology — Do not use if User asks for per-unit / per-plant data (use 16.1.A); User asks for generation forecasts (use 14.1.C or 14.1.D);
+
+## 14.1.C — Generation Forecast (Day-ahead)
+Domain: Generation — Nature: Forecast (Day-ahead) — Use when User asks for **expected electricity generation tomorrow**; Mentions: generation forecast, day-ahead generation, scheduled generation; Short-term forward-looking generation across all technologies — Do not use if User asks for actual / realised generation (use 16.1.A or 16.1.B/C); User asks specifically for wind or solar forecasts (use 14.1.D);
+
+## 14.1.D — Wind and Solar Generation Forecast
+Domain: Generation — Nature: Forecast (Renewables only) — Use when User asks specifically for **wind forecast**, **solar forecast**, or **renewable generation forecast**; Mentions: wind forecast, solar forecast, renewable forecast; Focused on intermittent renewable sources only — Do not use if User asks for total generation forecast across all technologies (use 14.1.C); User asks for actual renewable generation (use 16.1.B / 16.1.C);
+
+## 16.1.B / 16.1.C — Actual Generation per Production Type (Additional Countries)
+Domain: Generation — Nature: Actual / Realised — Use when Same intent as **16.1.B / 16.1.C**; Used for countries or zones where standard examples are sparse; User asks for generation mix in additional or less-covered countries — Do not use if User asks for forecasts (use 14.1.C or 14.1.D); User asks for per-unit generation (use 16.1.A)
+
+## 14.1.D — Wind and Solar Forecast (Additional Countries)
+Domain: Generation — Nature: Forecast (Renewables only) — Use when Same intent as **14.1.D**; Used for countries or zones where wind/solar forecast data is sparse; User asks for renewable forecasts in additional countries — Do not use if User asks for actual renewable generation (use 16.1.B / 16.1.C); User asks for total generation forecast (use 14.1.C)
+
+## 12.1.G — Cross-Border Physical Flows
+Domain: Transmission — Nature: Actual / Measured — Use when User asks for **actual electricity flows between two areas**; Mentions: physical flows, cross-border flows, interconnector flows; Wants measured power flows (not scheduled, not capacity) — Do not use if User asks for commercial schedules (use 12.1.F); User asks for capacity or transfer limits (use 11.1.A or 11.1); User asks for prices (use Chapter 2);
+
+## 11.1.A — Forecasted Transfer Capacities
+Domain: Transmission — Nature: Forecast / Capacity — Use when User asks for **NTC or ATC forecasts**; Mentions: transfer capacity forecast, NTC forecast, ATC forecast; Forward-looking capacity availability between two areas — Do not use if User asks for actual physical flows (use 12.1.G); User asks for already allocated or used capacity (use Chapter 2 endpoints); User asks for intraday continuous capacity (use 11.1);
+
+## 11.1 — Offered Transfer Capacity (Implicit / Continuous)
+Domain: Transmission — Nature: Offered Capacity — Use when User asks how much capacity is **offered to the market**; Mentions: offered capacity, available capacity, ATC, NTC; Context is implicit allocation or continuous intraday trading — Do not use if User asks for explicit auctions (use Chapter 2 explicit allocation articles); User asks for actual flows (use 12.1.G); User asks for forecasts (use 11.1.A);
+
+## 12.1.F — Commercial Schedules
+Domain: Transmission — Nature: Scheduled / Commercial — Use when User asks for **scheduled commercial exchanges**; Mentions: commercial schedules, scheduled exchanges, nominations; Wants what was scheduled, not what physically flowed — Do not use if User asks for actual physical flows (use 12.1.G); User asks for nominated capacity totals (use 12.1.B); User asks for prices (use Chapter 2);
+
+## 11.3 — DC Links / Intraday Transfer Limits
+Domain: Transmission — Nature: Capacity (HVDC / DC Links) — Use when User asks about **HVDC links or DC interconnectors**; Mentions: DC link, HVDC, intraday transfer limits; Capacity constraints specific to DC infrastructure — Do not use if User asks for AC interconnector capacity (use 11.1 or 11.1.A); User asks for physical flows (use 12.1.G)
+
+## 13.1.A — Redispatching (Internal)
+Domain: Transmission — Nature: Congestion Management / Operational — Use when User asks about **internal redispatching actions**; Mentions: redispatching, internal congestion management; Wants information on actions taken **within a single control area**; Focus is on relieving internal grid congestion — Do not use if User asks about cross-border redispatching (use 13.1.A — Cross-Border); User asks about costs only (use 13.1.C); User asks about countertrading (use 13.1.B);
+
+## 13.1.A — Redispatching (Cross-Border)
+Domain: Transmission — Nature: Congestion Management / Operational — Use when User asks about **redispatching involving multiple areas**; Mentions: cross-border redispatching, international redispatch; Focus is on congestion management actions affecting borders — Do not use if User asks only about internal redispatching (use 13.1.A — Internal); User asks about costs only (use 13.1.C); User asks about countertrading (use 13.1.B);
+
+## 13.1.B — Countertrading
+Domain: Transmission — Nature: Congestion Management / Market-based — Use when User asks about **countertrading actions**; Mentions: countertrading, market-based congestion management; Wants information on trades executed to relieve congestion — Do not use if User asks about redispatching actions (use 13.1.A); User asks only for costs (use 13.1.C); User asks about physical flows or schedules;
+
+## 13.1.C — Costs of Congestion Management
+Domain: Transmission — Nature: Financial / Cost — Use when User asks about **costs incurred for congestion management**; Mentions: congestion costs, redispatching costs, countertrading costs; Focus is on financial impact, not operational actions — Do not use if User asks about the redispatching or countertrading actions themselves; User asks for congestion income (use Chapter 2 — 12.1.E); User asks for prices or tariffs;
+
+## 9.1 — Expansion and Dismantling Projects
+Domain: Transmission — Nature: Infrastructure / Structural — Use when User asks about **grid expansion or dismantling projects**; Mentions: new transmission lines, grid reinforcement, dismantling; Long-term infrastructure development questions — Do not use if User asks about operational congestion management (use 13.1.A / 13.1.B); User asks about current physical flows or capacities; User asks about prices or market outcomes;
+
+## 15.1.A / 15.1.B — Unavailability of Generation Units
+Domain: Outages — Nature: Planned / Forced Unavailability — Use when User asks about **power plant outages**; Mentions: generation outage, plant outage, unit unavailability; Wants planned or forced outages of generation units; Focus is on availability status, not production values — Do not use if User asks about production units instead of generation units (use 15.1.C / 15.1.D); User asks about transmission line outages (use 10.1.A / 10.1.B); User asks for actual generation values (use Chapter 4);
+
+## 15.1.C / 15.1.D — Unavailability of Production Units
+Domain: Outages — Nature: Planned / Forced Unavailability — Use when User asks about **production unit unavailability**; Mentions: production unit outage, generator unavailability; Wants outage information at production-unit level (not individual plants) — Do not use if User asks for generation unit (power plant) outages (use 15.1.A / 15.1.B); User asks for transmission outages (use 10.1.A / 10.1.B); User asks for generation output data (use Chapter 4);
+
+## 10.1.A / 10.1.B — Unavailability of Transmission Infrastructure
+Domain: Outages — Nature: Planned / Forced Unavailability — Use when User asks about **grid outages**; Mentions: transmission outage, line outage, grid maintenance; Wants information on unavailable transmission infrastructure — Do not use if User asks for generation or production outages (use 15.1.x); User asks for congestion management actions (use Chapter 5); User asks for physical flows or capacities (use Chapter 5);
+
+## 10.1.C — Unavailability of Offshore Grid Infrastructure
+Domain: Outages — Nature: Planned / Forced Unavailability — Use when User asks about **offshore grid outages**; Mentions: offshore grid, offshore transmission, offshore maintenance; Specific focus on offshore infrastructure — Do not use if User asks about onshore transmission outages (use 10.1.A / 10.1.B); User asks about generation outages (use 15.1.x);
+
+## 17.1.F — Prices of Activated Balancing Energy (7.4.1)
+Domain: Balancing — Nature: Prices / Activated Energy — Use when User asks for prices of activated balancing energy; Mentions: aFRR price, mFRR price, activated balancing energy price, balancing activation price — Do not use if User asks for imbalance prices (use 17.1.G); User asks for imbalance volumes (use 17.1.H); User asks for day-ahead/intraday energy prices (use Chapter 2 prices);
+
+## IF aFRR 3.16 — Cross Border Marginal Prices (CBMPs) for aFRR Central Selection (7.4.2)
+Domain: Balancing — Nature: Cross-border Price / aFRR — Use when User asks specifically for CBMPs / cross-border marginal prices for aFRR; Mentions: CBMP, cross-border marginal price, aFRR central selection price — Do not use if User asks for general activated balancing energy prices (use 17.1.F); User asks for imbalance prices (use 17.1.G);
+
+## 17.1.G — Imbalance Prices (7.4.3)
+Domain: Balancing — Nature: Prices / Settlement — Use when User asks for imbalance prices; Mentions: imbalance settlement price, imbalance tariff, imbalance price — Do not use if User asks for activated balancing energy prices (use 17.1.F); User asks for day-ahead/intraday market prices (use Chapter 2); User asks for imbalance volumes (use 17.1.H);
+
+## 12.3.B & 12.3.C — Balancing Energy Bids (7.5.1)
+Domain: Balancing — Nature: Bids / Market Offers — Use when User asks for balancing energy bids / offers; Mentions: bids, bid ladder, bid curves, mFRR bids, aFRR bids, merit order (bids) — Do not use if User asks for aggregated bids (use 12.3.E); User asks for activated prices (use 17.1.F); User asks for imbalance prices (use 17.1.G);
+
+## 12.3.B & 12.3.C — Balancing Energy Bids Archives (7.5.2)
+Domain: Balancing — Nature: Bids / Historical Archive — Use when User asks for archived bids, historical bid records, bid archive; Mentions: archive, historical bids, past bids dataset — Do not use if User asks for current/regular bids without archive intent (use 12.3.B & 12.3.C); User asks for aggregated bids (use 12.3.E);
+
+## IFs mFRR 9.9; aFRR 9.6 & 9.8 — Changes to Bid Availability (7.5.3)
+Domain: Balancing — Nature: Availability / Status Changes — Use when User asks about changes to bid availability or availability updates; Mentions: bid availability changes, bid status updates, availability modifications — Do not use if User asks for bids themselves (use 12.3.B & 12.3.C); User asks for activation prices (use 17.1.F);
+
+## 12.3.E GL EB — Aggregated Balancing Energy Bids (7.5.4)
+Domain: Balancing — Nature: Aggregated Bids / Market Summary — Use when User asks for aggregated bids / aggregated merit order; Mentions: aggregated bids, aggregated merit order, total bid volume by price — Do not use if User asks for individual bids (use 12.3.B & 12.3.C); User asks for bid archives specifically (use bids archives);
+
+## IFs aFRR 3.4 & mFRR 3.4 — Elastic Demands (7.5.5)
+Domain: Balancing — Nature: Demand / Elastic Demand — Use when User asks for elastic demand in balancing context; Mentions: elastic demand, demand curves, flexible demand participation — Do not use if User asks for bids (use 12.3.B & 12.3.C or 12.3.E); User asks for imbalance volumes/prices;
+
+## IFs 3.10, 3.16 & 3.17 — Netted and Exchanged Volumes (7.6.1)
+Domain: Balancing — Nature: Cross-border Volumes / Netting & Exchange — Use when User asks for netted volumes, exchanged volumes, imbalance netting volumes; Mentions: netting, exchanged volumes, cross-border exchange in balancing — Do not use if User asks per-border breakdown (use 7.6.2); User asks for imbalance volumes total (use 17.1.H);
+
+## IFs 3.10, 3.16 & 3.17 — Netted and Exchanged Volumes per Border (7.6.2)
+Domain: Balancing — Nature: Cross-border Volumes / Per Border — Use when User asks for netted/exchanged volumes *per border*; Mentions: per border, per interconnector, border breakdown — Do not use if User asks totals (use 7.6.1); User asks for physical flows (use Chapter 5 physical flows);
+
+## 17.1.H — Total Imbalance Volumes (7.6.3)
+Domain: Balancing — Nature: Volumes / Imbalance — Use when User asks for imbalance volumes; Mentions: total imbalance volume, system imbalance volume, imbalance quantity — Do not use if User asks for imbalance prices (use 17.1.G); User asks for activated balancing volumes (different dataset); User asks for flows (Chapter 5);
+
+## 12.3.A GL EB — Current Balancing State / Area Control Error (7.6.4)
+Domain: Balancing — Nature: Real-time System State / ACE — Use when User asks for ACE or balancing state; Mentions: area control error, ACE, current balancing state — Do not use if User asks for prices or volumes (use the relevant 17.1.x sections);
+
+## 17.1.B & 17.1.C — Volumes and Prices of Contracted Reserves (7.7.1)
+Domain: Balancing — Nature: Reserves / Contracted (Prices + Volumes) — Use when User asks about contracted reserves and their prices/volumes; Mentions: contracted reserves, reserve contracting, reserve procurement price, reserve contracted volume — Do not use if User asks for activated energy prices (use 17.1.F); User asks for procured balancing capacity (use 12.3.F);
+
+## 12.3.F GL EB — Procured Balancing Capacity (7.7.2)
+Domain: Balancing — Nature: Capacity / Procured — Use when User asks how much balancing capacity was procured; Mentions: procured capacity, procured aFRR/mFRR capacity, balancing capacity procurement — Do not use if User asks for contracted reserve prices/volumes (use 17.1.B & 17.1.C); User asks for activated energy (use 17.1.F);
+
+## 187.2 SO GL — FCR Total Capacity (7.8.1)
+Domain: Balancing — Nature: Capacity / FCR — Use when User asks for total FCR capacity; Mentions: FCR total capacity, frequency containment reserve total — Do not use if User asks for shares of FCR (use 7.8.2); User asks for sharing between synchronous areas (use 7.8.3);
+
+## 187.2 SO GL — Shares of FCR Capacity (7.8.2)
+Domain: Balancing — Nature: Capacity / FCR Shares — Use when User asks for shares/allocations of FCR capacity (per area/participant grouping); Mentions: share of FCR, FCR shares, contribution shares — Do not use if User asks total FCR capacity only (use 7.8.1);
+
+## 190.2 SO GL — Sharing of FCR between Synchronous Areas (7.8.3)
+Domain: Balancing — Nature: Cross-area Sharing / FCR — Use when User asks about FCR sharing between synchronous areas; Mentions: synchronous area sharing, cross-area FCR sharing — Do not use if User asks total FCR capacity or shares within one area (use 7.8.1 / 7.8.2);
+
+## 188.3 & 189.2 SO GL — FRR & RR Capacity Outlook (7.9.1)
+Domain: Balancing — Nature: Forecast / Outlook (FRR & RR Capacity) — Use when User asks for outlook/forecast of FRR and/or RR capacity; Mentions: outlook, forecast, expected FRR capacity, expected RR capacity — Do not use if User asks actual realized capacity (use 7.9.2);
+
+## 188.4 & 189.3 SO GL — FRR and RR Actual Capacity (7.9.2)
+Domain: Balancing — Nature: Actual / Realised Capacity (FRR & RR) — Use when User asks for actual FRR/RR capacity; Mentions: actual FRR capacity, actual RR capacity, realized reserve capacity — Do not use if User asks outlook/forecast (use 7.9.1);
+
+## 12.3.H & 12.3.I — Allocation and Use of Cross-Zonal Balancing Capacity (7.10.1)
+Domain: Balancing — Nature: Cross-zonal Capacity / Allocation & Use — Use when User asks about allocation/use of cross-zonal balancing capacity; Mentions: cross-zonal balancing capacity, allocation, use, CZBC — Do not use if User asks about capacity limitations (use 7.10.2); User asks physical flows (Chapter 5);
+
+## IFs 4.3 & 4.4 — Balancing Border Capacity Limitations (7.10.2)
+Domain: Balancing — Nature: Constraints / Limitations — Use when User asks about limitations/constraints on balancing border capacity; Mentions: border capacity limitations, constraints, limitation rules — Do not use if User asks about allocation and use (use 12.3.H & 12.3.I);
+
+## 17.1.I — Financial Expenses and Income for Balancing (7.11.1)
+Domain: Balancing — Nature: Financial / Expenses & Income — Use when User asks about balancing financials; Mentions: financial expenses, income, balancing costs, balancing revenues — Do not use if User asks about congestion income (use Chapter 2 congestion income); User asks for activation prices/volumes (use 17.1.F / 17.1.E);
+
+## 185.4 SO GL — Results of Criteria Application Process - Measurements (7.11.2)
+Domain: Balancing — Nature: Compliance / Measurement Results — Use when User asks for results of criteria application process measurements; Mentions: criteria application process, measurements, compliance measurement results — Do not use if User asks for prices/volumes/capacity (use the relevant 17.1 / 12.3 / SO GL sections);
+
+## Router Disambiguation Rules for Balancing (Chapter 7)
+
+## 8.2.1 — Production and Generation Units
+Domain: Master Data — Nature: Configuration / Reference Data — Use when User asks for a list of **production units** / **generation units**; Mentions: “unit registry”, “list of plants”, “unit EIC codes”, “registered units”; User wants metadata like unit names, identifiers, technology (psrType), nominal power, etc.; User wants to cross-reference unit identifiers with other datasets (e.g., generation) — Do not use if User asks for **actual generation values** (use Generation domain Chapter 4, e.g., 16.1.*); User asks for **outages** of units (use Outages domain Chapter 6, 15.1.* / 10.1.*); User asks for **installed capacity time series** (use Generation domain, e.g., 14.1.*)
+
+## 9.2.1 — Other Market Information
+Domain: OMI — Nature: Announcements / Notifications / Events — Use when User asks for **market information announcements** that don’t fit other domains; Mentions: “market notice”, “announcement”, “notification”, “event”, “other transparency info”; Often used for infrastructure delays, operational notices, market events (as published documents) — Do not use if User asks for prices, flows, load, generation, outages, balancing datasets (use those domains); User asks specifically for “grid expansion/dismantling projects” (that’s 9.1 in Transmission chapter, not OMI)
+
+
+## Output
+Return only JSON: { "endpoint": "<ARTICLE_CODE>" }
+
+# Router Response
+```json
+{ "endpoint": "12.1.A" }
+```
+
+# Parsed Endpoints
+['12.1.A']

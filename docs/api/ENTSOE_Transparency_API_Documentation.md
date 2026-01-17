@@ -141,8 +141,8 @@ Common document type codes used across the API:
 | `A79` | Unavailability of production units |
 | `A80` | Unavailability of offshore grid |
 | `A81` | Unavailability of transmission infrastructure |
-| `A85` | Imbalance volume |
-| `A86` | Imbalance prices |
+| `A85` | Imbalance prices |
+| `A86` | Imbalance volume |
 
 ### 1.8 Business Types (businessType Parameter)
 
@@ -248,7 +248,7 @@ This section provides a complete reference of all 60+ API endpoints available on
 | **14.1.C** | Generation Forecast - Day Ahead | Aggregated day-ahead generation forecast | `A71` |
 | **14.1.D** | Generation Forecasts for Wind and Solar | Day-ahead and intraday forecasts for wind and solar | `A69` |
 | **16.1.A** | Actual Generation per Generation Unit | Actual generation output per individual generation unit | `A73` / `A75` |
-| **16.1.B&C** | Actual Generation per Production Type | Aggregated actual generation by production type | `A73` / `A74` |
+| **16.1.B&C** | Actual Generation per Production Type | Aggregated actual generation by production type | `A74` / `A75` |
 | **16.1.D** | Water Reservoirs and Hydro Storage Plants | Filling rate of water reservoirs and hydro storage | `A72` |
 
 ---
@@ -312,7 +312,7 @@ This section provides a complete reference of all 60+ API endpoints available on
 |---------|---------------|-------------|--------------|
 | **17.1.F** | Prices of Activated Balancing Energy | Prices for activated aFRR, mFRR, RR | `A84` |
 | **IF aFRR 3.16** | Cross Border Marginal Prices (CBMPs) | CBMPs for aFRR central selection | `A84` |
-| **17.1.G** | Imbalance Prices | System imbalance prices per imbalance price area | `A85` |
+| **17.1.G** | Imbalance Prices | System imbalance prices per imbalance price area | `A86` |
 
 **Balancing Energy Bids (5 endpoints):**
 

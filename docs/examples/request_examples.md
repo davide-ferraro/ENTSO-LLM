@@ -1136,7 +1136,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YDE-VE-------2",
     "periodStart": "202601072200",
@@ -1151,7 +1151,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YDE-RWENET---I",
     "periodStart": "202601072200",
@@ -1166,7 +1166,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YDE-EON------1",
     "periodStart": "202601072200",
@@ -1181,7 +1181,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YDE-ENBW-----N",
     "periodStart": "202601072200",
@@ -1251,7 +1251,22 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
     "processType": "A16",
     "in_Domain": "10YES-REE------0",
     "periodStart": "202601072200",
-    "periodEnd": "202601082200"
+    "periodEnd": "202601082200",
+    "psrType": "B12"
+}
+```
+
+### ✅ Variant 17.5: Italy North (wind onshore)
+📄 Response: Sample | **File:** `E17_v5_gentype_ITN_wind_onshore.xml`
+
+```python
+{
+    "documentType": "A75",
+    "processType": "A16",
+    "in_Domain": "10Y1001A1001A73I",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200",
+    "psrType": "B19"
 }
 ```
 
@@ -1260,7 +1275,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 ## 📋 Endpoint 18: Generation Forecast - Day Ahead (14.1.C)
 
 **Document Type:** `A71`  
-**Process Type:** `A01` (Day-ahead)  
+**Process Type:** `A01` (Day-ahead) 
 **Description:** Day-ahead scheduled generation forecast
 
 ### ✅ Variant 18.1: Belgium (1 day)
@@ -1326,7 +1341,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 ## 📋 Endpoint 19: Wind and Solar Forecast (14.1.D)
 
 **Document Type:** `A69`  
-**Process Type:** `A01` (Day-ahead)  
+**Process Type:** `A01` (Day-ahead) / `A40` (Intraday) / `A18` (Current)  
 **Description:** Day-ahead wind and solar generation forecast
 
 ### ✅ Variant 19.1: Belgium (1 day)
@@ -3009,7 +3024,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ## 📋 Endpoint 52: Actual Generation by Type - Additional (16.1.B&C)
 
-**Document Type:** `A75` | **Process Type:** `A16`  
+**Document Type:** `A73` | **Process Type:** `A16`  
 **Description:** Aggregated actual generation per fuel/technology type
 
 ### ✅ Variant 52.1: Austria (1 day)
@@ -3017,11 +3032,12 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YAT-APG------L",
     "periodStart": "202601072200",
-    "periodEnd": "202601082200"
+    "periodEnd": "202601082200",
+    "psrType": "B12"
 }
 ```
 
@@ -3030,7 +3046,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YNL----------L",
     "periodStart": "202601072200",
@@ -3043,7 +3059,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YPL-AREA-----S",
     "periodStart": "202601072200",
@@ -3056,7 +3072,7 @@ curl "https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A65
 
 ```python
 {
-    "documentType": "A75",
+    "documentType": "A73",
     "processType": "A16",
     "in_Domain": "10YCH-SWISSGRIDZ",
     "periodStart": "202601072200",

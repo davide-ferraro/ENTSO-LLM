@@ -1,0 +1,337 @@
+# Generator Prompt
+ # ENTSO-E Request Generator (Article-Code Driven)
+
+  You generate only a JSON payload of ENTSO-E API requests.
+  You are given:
+
+  - The user message (intent).
+  - The selected article code context via extracted documentation.
+  - Extracted request examples for that article code.
+  - Extracted technical documentation (Transparency Platform).
+  - EIC codes reference.
+  - Current UTC time.
+
+  You never invent schema or parameters beyond what is specified.
+
+  ## What You See in This Prompt
+
+  - Generator instructions (this file).
+  - Current UTC time (for periodStart/periodEnd).
+  - EIC codes table.
+  - Technical documentation for the selected article code (from ENTSOE_Transparency_API_Documentation.md).
+  - Request examples for the selected article code (from request_examples.md).
+  - Legacy endpoint examples (E-based, optional).
+  - User request (last).
+
+  ## Goal
+
+  Produce a single JSON object with a requests array. Each entry has:
+
+  - name: short snake_case.
+  - params: ENTSO-E API parameters that conform exactly to the article’s spec and the provided examples.
+
+  ## Output (JSON only)
+
+  Return valid JSON, no markdown, no explanations:
+
+  {
+    "requests": [
+      {
+        "name": "descriptive_name_snake_case",
+        "params": { /* strictly valid ENTSO-E params */ }
+      }
+    ]
+  }
+
+  ## Critical Rules
+
+  1. Schema from docs/examples only: Parameter keys and required/optional fields must match the provided technical documentation and
+     request examples. Do not add undocumented keys.
+  2. Time format: All times in YYYYMMDDHHMM UTC.
+  3. Domain parameter rules (non-negotiable):
+      - Load (A65) → outBiddingZone_Domain
+      - Prices (A44) → in_Domain and out_Domain (same value)
+      - Generation aggregated (A73) → in_Domain (+ psrType when user mentions a fuel/technology)
+      - Generation per unit (A75) → in_Domain (Control Area)
+      - Physical flows → out_Domain → in_Domain
+      - Balancing → controlArea_Domain
+  4. DocumentType / ProcessType: Use the exact values from the article spec/examples.
+  5. No hallucinated params: If a parameter is not shown or implied by the provided doc/examples, do not include it.
+  6. Values: Choose sensible values consistent with the user intent (zones, time window), but never change keys.
+  7. Fuel-specific requests: if the user names a technology (wind onshore/offshore, solar, hydro, nuclear, etc.), include the correct `psrType` code.
+
+  ## Final Self-Check (mandatory)
+
+  Before output:
+
+  - All required parameters from the article doc/examples are present.
+  - No forbidden/irrelevant parameters are included.
+  - Parameter names exactly match the provided examples/docs.
+  - JSON is valid and contains only the requests array and its objects.
+
+  Return only the JSON.
+
+  ## Quick Schemas to Prevent Mistakes
+
+  ### 16.1.B / 16.1.C — Actual Generation per Production Type (Aggregated)
+  - documentType: A75
+  - processType: A16 (realised). Never use A14.
+  - Required: in_Domain, periodStart, periodEnd
+  - psrType: include when user specifies a fuel/technology. Use these codes:
+      - B19 = Wind onshore
+      - B18 = Wind offshore
+      - B16 = Solar
+      - B10 = Hydro pumped storage
+      - B11 = Hydro run-of-river
+      - B12 = Hydro water reservoir
+      - B14 = Nuclear
+      - B09 = Geothermal
+      - B01/B17 = Biomass/Waste (as appropriate)
+  - Do NOT add productionType or other keys; use psrType only.
+
+
+## Current UTC Time
+202601170923
+
+## EIC Codes Reference
+
+| Country | EIC Code |
+|---------|----------|
+| Austria | 10YAT-APG------L |
+| Belgium | 10YBE----------2 |
+| Czech Republic | 10YCZ-CEPS-----N |
+| Denmark (DK1) | 10YDK-1--------W |
+| Denmark (DK2) | 10YDK-2--------M |
+| Finland | 10YFI-1--------U |
+| France | 10YFR-RTE------C |
+| Germany-Luxembourg | 10Y1001A1001A82H |
+| Great Britain | 10YGB----------A |
+| Greece | 10YGR-HTSO-----Y |
+| Hungary | 10YHU-MAVIR----U |
+| Ireland | 10Y1001A1001A59C |
+| Italy (North) | 10Y1001A1001A73I |
+| Italy (South) | 10Y1001A1001A788 |
+| Netherlands | 10YNL----------L |
+| Norway (NO1) | 10YNO-1--------2 |
+| Poland | 10YPL-AREA-----S |
+| Portugal | 10YPT-REN------W |
+| Romania | 10YRO-TEL------P |
+| Spain | 10YES-REE------0 |
+| Sweden (SE3) | 10Y1001A1001A46L |
+| Switzerland | 10YCH-SWISSGRIDZ |
+
+#### 4.4.3 Actual Generation per Production Type (16.1.B&C)
+
+Returns actual electricity generation aggregated by production type.
+
+| Property | Value |
+|----------|-------|
+| **Method** | GET |
+| **Endpoint** | `https://web-api.tp.entsoe.eu/api` |
+
+**Important Notes:**
+- Response is the same whether using `A74` (Wind & Solar only) or `A75` (All production types)
+- `inBiddingZone_Domain` = Generation values
+- `outBiddingZone_Domain` = Consumption values
+
+**Parameters:**
+
+| Parameter | Required | Value | Description |
+|-----------|----------|-------|-------------|
+| `documentType` | **[M]** | `A75` or `A74` | A75 = All types; A74 = Wind and solar only |
+| `processType` | **[M]** | `A16` | Realised |
+| `in_Domain` | **[M]** | EIC Code | Control Area, Bidding Zone, or Country |
+| `periodStart` | **[M]** | `yyyyMMddHHmm` | Start datetime |
+| `periodEnd` | **[M]** | `yyyyMMddHHmm` | End datetime |
+| `psrType` | [O] | Code | Production type (B01-B25). If omitted, returns all types |
+
+**Example Request:**
+```bash
+curl --location 'https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A75&processType=A16&in_Domain=10Y1001A1001A83F&periodStart=202308152200&periodEnd=202308162200'
+```
+
+**Response Structure:**
+- Resolution: `PT15M` or `PT60M` (depends on country)
+- `businessType`: `A01` (Production)
+- One TimeSeries per production type
+- `objectAggregation`: `A08` (Resource type)
+
+---
+
+## 📋 Endpoint 17: Actual Generation per Production Type (16.1.B&C)
+
+**Document Type:** `A75`  
+**Process Type:** `A16` (Realised)  
+**Description:** Aggregated actual generation per fuel/technology type
+
+### ✅ Variant 17.1: Belgium (1 day)
+📄 Response: 34.7 KB | **File:** `E17_v1_gentype_BE_1day.xml`
+
+```python
+{
+    "documentType": "A75",
+    "processType": "A16",
+    "in_Domain": "10YBE----------2",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 17.2: Germany-Luxembourg (1 day)
+📄 Response: 155.5 KB | **File:** `E17_v2_gentype_DE_1day.xml`
+
+```python
+{
+    "documentType": "A75",
+    "processType": "A16",
+    "in_Domain": "10Y1001A1001A82H",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 17.3: France (1 day)
+📄 Response: 156.6 KB | **File:** `E17_v3_gentype_FR_1day.xml`
+
+```python
+{
+    "documentType": "A75",
+    "processType": "A16",
+    "in_Domain": "10YFR-RTE------C",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 17.4: Spain (1 day)
+📄 Response: 96.1 KB | **File:** `E17_v4_gentype_ES_1day.xml`
+
+```python
+{
+    "documentType": "A75",
+    "processType": "A16",
+    "in_Domain": "10YES-REE------0",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200",
+    "psrType": "B12"
+}
+```
+
+### ✅ Variant 17.5: Italy North (wind onshore)
+📄 Response: Sample | **File:** `E17_v5_gentype_ITN_wind_onshore.xml`
+
+```python
+{
+    "documentType": "A75",
+    "processType": "A16",
+    "in_Domain": "10Y1001A1001A73I",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200",
+    "psrType": "B19"
+}
+```
+
+---
+
+## 📋 Endpoint 52: Actual Generation by Type - Additional (16.1.B&C)
+
+**Document Type:** `A73` | **Process Type:** `A16`  
+**Description:** Aggregated actual generation per fuel/technology type
+
+### ✅ Variant 52.1: Austria (1 day)
+📄 Response: 75.1 KB | **File:** `E52_v1_gentype_AT.xml`
+
+```python
+{
+    "documentType": "A73",
+    "processType": "A16",
+    "in_Domain": "10YAT-APG------L",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200",
+    "psrType": "B12"
+}
+```
+
+### ✅ Variant 52.2: Netherlands (1 day)
+📄 Response: 131.2 KB | **File:** `E52_v2_gentype_NL.xml`
+
+```python
+{
+    "documentType": "A73",
+    "processType": "A16",
+    "in_Domain": "10YNL----------L",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 52.3: Poland (1 day)
+📄 Response: 135.9 KB | **File:** `E52_v3_gentype_PL.xml`
+
+```python
+{
+    "documentType": "A73",
+    "processType": "A16",
+    "in_Domain": "10YPL-AREA-----S",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 52.4: Switzerland (1 day)
+📄 Response: 18.8 KB | **File:** `E52_v4_gentype_CH.xml`
+
+```python
+{
+    "documentType": "A73",
+    "processType": "A16",
+    "in_Domain": "10YCH-SWISSGRIDZ",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+## User Request
+Get nuclear generation in France for the last month
+
+## Generate the JSON:
+
+# Generator Response
+{
+  "requests": [
+    {
+      "name": "nuclear_generation_france_last_month",
+      "params": {
+        "documentType": "A75",
+        "processType": "A16",
+        "in_Domain": "10YFR-RTE------C",
+        "periodStart": "202512170923",
+        "periodEnd": "202601170923",
+        "psrType": "B14"
+      }
+    }
+  ]
+}
+
+# Parsed Requests
+[
+  {
+    "name": "nuclear_generation_france_last_month",
+    "params": {
+      "documentType": "A75",
+      "processType": "A16",
+      "in_Domain": "10YFR-RTE------C",
+      "periodStart": "202512170923",
+      "periodEnd": "202601170923",
+      "psrType": "B14"
+    }
+  }
+]

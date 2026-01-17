@@ -1,0 +1,515 @@
+# Generator Prompt
+ # ENTSO-E Request Generator (Article-Code Driven)
+
+  You generate only a JSON payload of ENTSO-E API requests.
+  You are given:
+
+  - The user message (intent).
+  - The selected article code context via extracted documentation.
+  - Extracted request examples for that article code.
+  - Extracted technical documentation (Transparency Platform).
+  - EIC codes reference.
+  - Current UTC time.
+
+  You never invent schema or parameters beyond what is specified.
+
+  ## What You See in This Prompt
+
+  - Generator instructions (this file).
+  - Current UTC time (for periodStart/periodEnd).
+  - EIC codes table.
+  - Technical documentation for the selected article code (from ENTSOE_Transparency_API_Documentation.md).
+  - Request examples for the selected article code (from request_examples.md).
+  - Legacy endpoint examples (E-based, optional).
+  - User request (last).
+
+  ## Goal
+
+  Produce a single JSON object with a requests array. Each entry has:
+
+  - name: short snake_case.
+  - params: ENTSO-E API parameters that conform exactly to the article’s spec and the provided examples.
+
+  ## Output (JSON only)
+
+  Return valid JSON, no markdown, no explanations:
+
+  {
+    "requests": [
+      {
+        "name": "descriptive_name_snake_case",
+        "params": { /* strictly valid ENTSO-E params */ }
+      }
+    ]
+  }
+
+  ## Critical Rules
+
+  1. Schema from docs/examples only: Parameter keys and required/optional fields must match the provided technical documentation and
+     request examples. Do not add undocumented keys.
+  2. Time format: All times in YYYYMMDDHHMM UTC.
+  3. Domain parameter rules (non-negotiable):
+      - Load (A65) → outBiddingZone_Domain
+      - Prices (A44) → in_Domain and out_Domain (same value)
+      - Generation aggregated (A73) → in_Domain (+ psrType when user mentions a fuel/technology)
+      - Generation per unit (A75) → in_Domain (Control Area)
+      - Physical flows → out_Domain → in_Domain
+      - Balancing → controlArea_Domain
+  4. DocumentType / ProcessType: Use the exact values from the article spec/examples.
+  5. No hallucinated params: If a parameter is not shown or implied by the provided doc/examples, do not include it.
+  6. Values: Choose sensible values consistent with the user intent (zones, time window), but never change keys.
+  7. Fuel-specific requests: if the user names a technology (wind onshore/offshore, solar, hydro, nuclear, etc.), include the correct `psrType` code.
+
+  ## Final Self-Check (mandatory)
+
+  Before output:
+
+  - All required parameters from the article doc/examples are present.
+  - No forbidden/irrelevant parameters are included.
+  - Parameter names exactly match the provided examples/docs.
+  - JSON is valid and contains only the requests array and its objects.
+
+  Return only the JSON.
+
+  ## Quick Schemas to Prevent Mistakes
+
+  ### 16.1.B / 16.1.C — Actual Generation per Production Type (Aggregated)
+  - documentType: A75
+  - processType: A16 (realised). Never use A14.
+  - Required: in_Domain, periodStart, periodEnd
+  - psrType: include when user specifies a fuel/technology. Use these codes:
+      - B19 = Wind onshore
+      - B18 = Wind offshore
+      - B16 = Solar
+      - B10 = Hydro pumped storage
+      - B11 = Hydro run-of-river
+      - B12 = Hydro water reservoir
+      - B14 = Nuclear
+      - B09 = Geothermal
+      - B01/B17 = Biomass/Waste (as appropriate)
+  - Do NOT add productionType or other keys; use psrType only.
+
+
+## Current UTC Time
+202601170931
+
+## EIC Codes Reference
+
+| Country | EIC Code |
+|---------|----------|
+| Austria | 10YAT-APG------L |
+| Belgium | 10YBE----------2 |
+| Czech Republic | 10YCZ-CEPS-----N |
+| Denmark (DK1) | 10YDK-1--------W |
+| Denmark (DK2) | 10YDK-2--------M |
+| Finland | 10YFI-1--------U |
+| France | 10YFR-RTE------C |
+| Germany-Luxembourg | 10Y1001A1001A82H |
+| Great Britain | 10YGB----------A |
+| Greece | 10YGR-HTSO-----Y |
+| Hungary | 10YHU-MAVIR----U |
+| Ireland | 10Y1001A1001A59C |
+| Italy (North) | 10Y1001A1001A73I |
+| Italy (South) | 10Y1001A1001A788 |
+| Netherlands | 10YNL----------L |
+| Norway (NO1) | 10YNO-1--------2 |
+| Poland | 10YPL-AREA-----S |
+| Portugal | 10YPT-REN------W |
+| Romania | 10YRO-TEL------P |
+| Spain | 10YES-REE------0 |
+| Sweden (SE3) | 10Y1001A1001A46L |
+| Switzerland | 10YCH-SWISSGRIDZ |
+
+#### 2.2.12 Energy Prices (12.1.D)
+
+Returns day-ahead and intraday energy prices for a bidding zone.
+
+| Property | Value |
+|----------|-------|
+| **Method** | GET |
+| **Endpoint** | `https://web-api.tp.entsoe.eu/api` |
+
+**Request Limits:**
+- One year range limit applies
+- Maximum 100 documents per response (use offset for pagination)
+
+**Parameters:**
+
+| Parameter | Required | Value | Description |
+|-----------|----------|-------|-------------|
+| `documentType` | **[M]** | `A44` | Price Document |
+| `out_Domain` | **[M]** | EIC Code | Bidding Zone |
+| `in_Domain` | **[M]** | EIC Code | Bidding Zone (must be same as out_Domain) |
+| `periodStart` | **[M]** | `yyyyMMddHHmm` | Start datetime |
+| `periodEnd` | **[M]** | `yyyyMMddHHmm` | End datetime |
+| `contract_MarketAgreement.type` | [O] | Code | A01=Day-ahead, A07=Intraday |
+| `classificationSequence_AttributeInstanceComponent.position` | [O] | Integer | Position filter |
+| `offset` | [O] | Integer [0-4800] | Pagination offset |
+
+**Example Request:**
+```bash
+curl --location 'https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A44&out_Domain=10YAT-APG------L&in_Domain=10YAT-APG------L&periodStart=202407272200&periodEnd=202407282200'
+```
+
+**Response Structure:**
+- Resolution: `PT15M` or `PT60M` depending on market
+- Data: `price.amount` in EUR/MWH
+- Currency: EUR
+- Includes `auction.type` (A01=Day-ahead auction)
+
+---
+
+### 2.3 Contract/Market Agreement Types Reference
+
+| Code | Description | Typical Use |
+|------|-------------|-------------|
+| `A01` | Day-ahead | Day-ahead auctions and allocations |
+| `A02` | Weekly | Long-term weekly products |
+| `A03` | Monthly | Long-term monthly products |
+| `A04` | Yearly | Long-term yearly products |
+| `A05` | Total | Aggregated/total values |
+| `A06` | Long Term | Other long-term products |
+| `A07` | Intraday | Intraday continuous/auctions |
+| `A08` | Quarterly | Quarterly products |
+
+### 2.4 Auction Types Reference
+
+| Code | Description |
+|------|-------------|
+| `A01` | Implicit (market coupling) |
+| `A02` | Explicit (capacity auctions) |
+| `A08` | Continuous (intraday) |
+
+### 2.5 Business Types Reference (Market Domain)
+
+| Code | Description |
+|------|-------------|
+| `A29` | Already allocated capacity |
+| `A31` | Offered capacity |
+| `A34` | Allocated capacity (third countries) |
+| `A43` | Requested capacity (without price) |
+| `B05` | Capacity allocated (with price) |
+| `B07` | Auction revenue |
+| `B08` | Total nominated capacity |
+| `B09` | Net position |
+| `B10` | Congestion income |
+
+---
+
+## Chapter 3: Load
+
+The Load domain provides access to electricity consumption data including actual load measurements and load forecasts at various time horizons (day-ahead, week-ahead, month-ahead, year-ahead).
+
+### 3.1 Overview
+
+| Aspect | Details |
+|--------|---------|
+| **Authorization** | API Key (inherited from collection) |
+| **Response Format** | XML (`GL_MarketDocument`) |
+| **Namespace** | `urn:iec62325.351:tc57wg16:451-6:generationloaddocument:3:0` |
+| **Unit of Measurement** | MAW (Megawatt) |
+
+### 3.2 Common Parameters for Load Endpoints
+
+All Load endpoints share these common parameters:
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `documentType` | **[M]** | `A65` (System total load) or `A70` (Load forecast margin) |
+| `processType` | **[M]** | Specifies the time horizon (see table below) |
+| `outBiddingZone_Domain` | **[M]** | EIC code of Control Area, Bidding Zone, or Country |
+| `periodStart` | **[M]** | Start datetime (`yyyyMMddHHmm`) |
+| `periodEnd` | **[M]** | End datetime (`yyyyMMddHHmm`) |
+
+### 3.3 Process Types for Load Data
+
+| Code | Description | Minimum Response Interval |
+|------|-------------|---------------------------|
+| `A16` | Realised (Actual) | One MTU period |
+| `A01` | Day ahead | One day |
+| `A31` | Week ahead | One week |
+| `A32` | Month ahead | One month |
+| `A33` | Year ahead | One year |
+
+### 3.4 Endpoints
+
+---
+
+## 📋 Endpoint 10: Day-ahead Energy Prices (12.1.D)
+
+**Document Type:** `A44`  
+**Description:** Day-ahead and intraday energy prices per bidding zone
+
+### ✅ Variant 10.1: Austria (1 day)
+📄 Response: 55.0 KB | **File:** `E10_v1_prices_AT_1day.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YAT-APG------L",
+    "in_Domain": "10YAT-APG------L",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 10.2: Spain (1 day)
+📄 Response: 92.7 KB | **File:** `E10_v2_prices_ES_1day.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YES-REE------0",
+    "in_Domain": "10YES-REE------0",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 10.3: Italy North (7 days)
+📄 Response: 97.4 KB | **File:** `E10_v3_prices_IT_North_7days.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10Y1001A1001A73I",
+    "in_Domain": "10Y1001A1001A73I",
+    "periodStart": "202601012200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 10.4: Poland (Dec 2025)
+📄 Response: 93.3 KB | **File:** `E10_v4_prices_PL_dec2025.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YPL-AREA-----S",
+    "in_Domain": "10YPL-AREA-----S",
+    "periodStart": "202512010000",
+    "periodEnd": "202512070000"
+}
+```
+
+---
+
+---
+
+## 📋 Endpoint 56: Day-ahead Prices - Italian Zones (12.1.D)
+
+**Document Type:** `A44`  
+**Description:** Day-ahead energy prices for Italian and neighboring zones
+
+### ✅ Variant 56.1: Italy North (1 day)
+📄 Response: 26.4 KB | **File:** `E56_v1_prices_IT_North.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10Y1001A1001A73I",
+    "in_Domain": "10Y1001A1001A73I",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 56.2: Italy South (1 day)
+📄 Response: 23.5 KB | **File:** `E56_v2_prices_IT_South.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10Y1001A1001A788",
+    "in_Domain": "10Y1001A1001A788",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 56.3: Slovenia (1 day)
+📄 Response: 28.3 KB | **File:** `E56_v4_prices_SI.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YSI-ELES-----O",
+    "in_Domain": "10YSI-ELES-----O",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 56.4: Croatia (1 day)
+📄 Response: 28.3 KB | **File:** `E56_v5_prices_HR.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YHR-HEP------M",
+    "in_Domain": "10YHR-HEP------M",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+## 📋 Endpoint 57: Day-ahead Prices - Nordic Zones (12.1.D)
+
+**Document Type:** `A44`  
+**Description:** Day-ahead energy prices for Nordic bidding zones
+
+### ✅ Variant 57.1: Norway NO3 (1 day)
+📄 Response: 28.1 KB | **File:** `E57_v1_prices_NO3.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YNO-3--------J",
+    "in_Domain": "10YNO-3--------J",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 57.2: Norway NO4 (1 day)
+📄 Response: 25.7 KB | **File:** `E57_v2_prices_NO4.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YNO-4--------9",
+    "in_Domain": "10YNO-4--------9",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 57.3: Norway NO5 (1 day)
+📄 Response: 28.2 KB | **File:** `E57_v3_prices_NO5.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10Y1001A1001A48H",
+    "in_Domain": "10Y1001A1001A48H",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 57.4: Sweden SE1 (1 day)
+📄 Response: 28.2 KB | **File:** `E57_v4_prices_SE1.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10Y1001A1001A44P",
+    "in_Domain": "10Y1001A1001A44P",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+## 📋 Endpoint 58: Day-ahead Prices - Baltic & Eastern (12.1.D)
+
+**Document Type:** `A44`  
+**Description:** Day-ahead energy prices for Baltic states and Eastern Europe
+
+### ✅ Variant 58.1: Estonia (1 day)
+📄 Response: 27.3 KB | **File:** `E58_v1_prices_EE.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10Y1001A1001A39I",
+    "in_Domain": "10Y1001A1001A39I",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 58.2: Latvia (1 day)
+📄 Response: 27.3 KB | **File:** `E58_v2_prices_LV.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YLV-1001A00074",
+    "in_Domain": "10YLV-1001A00074",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 58.3: Lithuania (1 day)
+📄 Response: 27.3 KB | **File:** `E58_v3_prices_LT.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YLT-1001A0008Q",
+    "in_Domain": "10YLT-1001A0008Q",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+### ✅ Variant 58.4: Finland (1 day)
+📄 Response: 27.5 KB | **File:** `E58_v4_prices_FI.xml`
+
+```python
+{
+    "documentType": "A44",
+    "out_Domain": "10YFI-1--------U",
+    "in_Domain": "10YFI-1--------U",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+## User Request
+Get price data for Italy North zone
+
+## Generate the JSON:
+
+# Generator Response
+{
+  "requests": [
+    {
+      "name": "prices_italy_north",
+      "params": {
+        "documentType": "A44",
+        "out_Domain": "10Y1001A1001A73I",
+        "in_Domain": "10Y1001A1001A73I",
+        "periodStart": "202601170000",
+        "periodEnd": "202601180000"
+      }
+    }
+  ]
+}
+
+# Parsed Requests
+[
+  {
+    "name": "prices_italy_north",
+    "params": {
+      "documentType": "A44",
+      "out_Domain": "10Y1001A1001A73I",
+      "in_Domain": "10Y1001A1001A73I",
+      "periodStart": "202601170000",
+      "periodEnd": "202601180000"
+    }
+  }
+]

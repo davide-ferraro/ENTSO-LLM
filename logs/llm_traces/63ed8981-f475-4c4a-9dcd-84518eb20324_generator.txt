@@ -1,0 +1,354 @@
+# Generator Prompt
+ # ENTSO-E Request Generator (Article-Code Driven)
+
+  You generate only a JSON payload of ENTSO-E API requests.
+  You are given:
+
+  - The user message (intent).
+  - The selected article code context via extracted documentation.
+  - Extracted request examples for that article code.
+  - Extracted technical documentation (Transparency Platform).
+  - EIC codes reference.
+  - Current UTC time.
+
+  You never invent schema or parameters beyond what is specified.
+
+  ## What You See in This Prompt
+
+  - Generator instructions (this file).
+  - Current UTC time (for periodStart/periodEnd).
+  - EIC codes table.
+  - Technical documentation for the selected article code (from ENTSOE_Transparency_API_Documentation.md).
+  - Request examples for the selected article code (from request_examples.md).
+  - Legacy endpoint examples (E-based, optional).
+  - User request (last).
+
+  ## Goal
+
+  Produce a single JSON object with a requests array. Each entry has:
+
+  - name: short snake_case.
+  - params: ENTSO-E API parameters that conform exactly to the article’s spec and the provided examples.
+
+  ## Output (JSON only)
+
+  Return valid JSON, no markdown, no explanations:
+
+  {
+    "requests": [
+      {
+        "name": "descriptive_name_snake_case",
+        "params": { /* strictly valid ENTSO-E params */ }
+      }
+    ]
+  }
+
+  ## Critical Rules
+
+  1. Schema from docs/examples only: Parameter keys and required/optional fields must match the provided technical documentation and
+     request examples. Do not add undocumented keys.
+  2. Time format: All times in YYYYMMDDHHMM UTC.
+  3. Domain parameter rules (non-negotiable):
+      - Load (A65) → outBiddingZone_Domain
+      - Prices (A44) → in_Domain and out_Domain (same value)
+      - Generation aggregated (A73) → in_Domain (+ psrType when user mentions a fuel/technology)
+      - Generation per unit (A75) → in_Domain (Control Area)
+      - Physical flows → out_Domain → in_Domain
+      - Balancing → controlArea_Domain
+  4. DocumentType / ProcessType: Use the exact values from the article spec/examples.
+  5. No hallucinated params: If a parameter is not shown or implied by the provided doc/examples, do not include it.
+  6. Values: Choose sensible values consistent with the user intent (zones, time window), but never change keys.
+  7. Fuel-specific requests: if the user names a technology (wind onshore/offshore, solar, hydro, nuclear, etc.), include the correct `psrType` code.
+
+  ## Final Self-Check (mandatory)
+
+  Before output:
+
+  - All required parameters from the article doc/examples are present.
+  - No forbidden/irrelevant parameters are included.
+  - Parameter names exactly match the provided examples/docs.
+  - JSON is valid and contains only the requests array and its objects.
+
+  Return only the JSON.
+
+  ## Quick Schemas to Prevent Mistakes
+
+  ### 16.1.B / 16.1.C — Actual Generation per Production Type (Aggregated)
+  - documentType: A75
+  - processType: A16 (realised). Never use A14.
+  - Required: in_Domain, periodStart, periodEnd
+  - psrType: include when user specifies a fuel/technology. Use these codes:
+      - B19 = Wind onshore
+      - B18 = Wind offshore
+      - B16 = Solar
+      - B10 = Hydro pumped storage
+      - B11 = Hydro run-of-river
+      - B12 = Hydro water reservoir
+      - B14 = Nuclear
+      - B09 = Geothermal
+      - B01/B17 = Biomass/Waste (as appropriate)
+  - Do NOT add productionType or other keys; use psrType only.
+
+
+## Current UTC Time
+202601170933
+
+## EIC Codes Reference
+
+| Country | EIC Code |
+|---------|----------|
+| Austria | 10YAT-APG------L |
+| Belgium | 10YBE----------2 |
+| Czech Republic | 10YCZ-CEPS-----N |
+| Denmark (DK1) | 10YDK-1--------W |
+| Denmark (DK2) | 10YDK-2--------M |
+| Finland | 10YFI-1--------U |
+| France | 10YFR-RTE------C |
+| Germany-Luxembourg | 10Y1001A1001A82H |
+| Great Britain | 10YGB----------A |
+| Greece | 10YGR-HTSO-----Y |
+| Hungary | 10YHU-MAVIR----U |
+| Ireland | 10Y1001A1001A59C |
+| Italy (North) | 10Y1001A1001A73I |
+| Italy (South) | 10Y1001A1001A788 |
+| Netherlands | 10YNL----------L |
+| Norway (NO1) | 10YNO-1--------2 |
+| Poland | 10YPL-AREA-----S |
+| Portugal | 10YPT-REN------W |
+| Romania | 10YRO-TEL------P |
+| Spain | 10YES-REE------0 |
+| Sweden (SE3) | 10Y1001A1001A46L |
+| Switzerland | 10YCH-SWISSGRIDZ |
+
+#### 5.3.3 Commercial Schedules (12.1.F)
+
+Returns finalized commercial schedules for cross-border energy exchanges.
+
+| Property | Value |
+|----------|-------|
+| **Method** | GET |
+| **Endpoint** | `https://web-api.tp.entsoe.eu/api` |
+
+**Parameters:**
+
+| Parameter | Required | Value | Description |
+|-----------|----------|-------|-------------|
+| `documentType` | **[M]** | `A09` | Finalised schedule |
+| `out_Domain` | **[M]** | EIC Code | Origin Control Area, Bidding Zone, or Country |
+| `in_Domain` | **[M]** | EIC Code | Destination Control Area, Bidding Zone, or Country |
+| `periodStart` | **[M]** | `yyyyMMddHHmm` | Start datetime |
+| `periodEnd` | **[M]** | `yyyyMMddHHmm` | End datetime |
+| `contract_MarketAgreement.Type` | [O] | Code | A01 = Day Ahead Commercial Schedules; A05 = Total Commercial Schedules |
+
+**Example Request:**
+```bash
+curl --location 'https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A09&out_Domain=10YBE----------2&in_Domain=10YFR-RTE------C&periodStart=202410312300&periodEnd=202411012300'
+```
+
+**Response Structure:**
+- Resolution: `PT15M` (15-minute intervals)
+- `businessType`: `A06` (Commercial exchange)
+- Returns separate TimeSeries for Day-Ahead (`A01`) and Total (`A05`) schedules
+- `curveType`: `A03` (Variable-sized blocks)
+
+**Example Response Data:**
+```xml
+<TimeSeries>
+    <mRID>1</mRID>
+    <businessType>A06</businessType>
+    <in_Domain.mRID codingScheme="A01">10YFR-RTE------C</in_Domain.mRID>
+    <out_Domain.mRID codingScheme="A01">10YBE----------2</out_Domain.mRID>
+    <contract_MarketAgreement.type>A01</contract_MarketAgreement.type>
+    <quantity_Measure_Unit.name>MAW</quantity_Measure_Unit.name>
+    <curveType>A03</curveType>
+    <Period>
+        <resolution>PT15M</resolution>
+        <Point>
+            <position>1</position>
+            <quantity>0</quantity>
+        </Point>
+    </Period>
+</TimeSeries>
+```
+
+---
+
+#### 5.3.4 Commercial Schedules - Net Positions (12.1.F)
+
+Returns net position data for a specific bidding zone (import/export balance).
+
+| Property | Value |
+|----------|-------|
+| **Method** | GET |
+| **Endpoint** | `https://web-api.tp.entsoe.eu/api` |
+
+**Key Difference:** Set `in_Domain` = `out_Domain` (same EIC code) to get net positions.
+
+**Parameters:**
+
+| Parameter | Required | Value | Description |
+|-----------|----------|-------|-------------|
+| `documentType` | **[M]** | `A09` | Finalised schedule |
+| `out_Domain` | **[M]** | EIC Code | Control Area, Bidding Zone, or Country |
+| `in_Domain` | **[M]** | EIC Code | **Same as out_Domain** |
+| `periodStart` | **[M]** | `yyyyMMddHHmm` | Start datetime |
+| `periodEnd` | **[M]** | `yyyyMMddHHmm` | End datetime |
+| `contract_MarketAgreement.Type` | [O] | Code | A01 = Day Ahead; A05 = Total |
+
+**Example Request:**
+```bash
+curl --location 'https://web-api.tp.entsoe.eu/api?securityToken=YOUR_TOKEN&documentType=A09&out_Domain=10YAT-APG------L&in_Domain=10YAT-APG------L&periodStart=202506102200&periodEnd=202506112200'
+```
+
+**Response Structure:**
+- Resolution: `PT15M` (15-minute intervals)
+- `businessType`: `B09` (Net position)
+- Multiple TimeSeries showing exchanges with neighboring zones
+- Positive values = export, Negative values = import
+
+---
+
+## 📋 Endpoint 22: Commercial Schedules (12.1.F)
+
+**Document Type:** `A09`  
+**Description:** Scheduled commercial exchanges between bidding zones
+
+### ✅ Variant 22.1: Belgium → France (1 day)
+📄 Response: 16.6 KB | **File:** `E22_v1_sched_BE_FR_1day.xml`
+
+```python
+{
+    "documentType": "A09",
+    "out_Domain": "10YBE----------2",
+    "in_Domain": "10YFR-RTE------C",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 22.2: France → Germany (1 day)
+📄 Response: 28.7 KB | **File:** `E22_v2_sched_FR_DE_1day.xml`
+
+```python
+{
+    "documentType": "A09",
+    "out_Domain": "10YFR-RTE------C",
+    "in_Domain": "10Y1001A1001A82H",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 22.3: Germany → Austria (1 day)
+📄 Response: 30.9 KB | **File:** `E22_v3_sched_DE_AT_1day.xml`
+
+```python
+{
+    "documentType": "A09",
+    "out_Domain": "10Y1001A1001A82H",
+    "in_Domain": "10YAT-APG------L",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+### ✅ Variant 22.4: Spain → Portugal (1 day)
+📄 Response: 27.5 KB | **File:** `E22_v4_sched_ES_PT_1day.xml`
+
+```python
+{
+    "documentType": "A09",
+    "out_Domain": "10YES-REE------0",
+    "in_Domain": "10YPT-REN------W",
+    "periodStart": "202601072200",
+    "periodEnd": "202601082200"
+}
+```
+
+---
+
+## 📋 Endpoint 31: Net Position via Commercial Schedules (12.1.F)
+
+**Document Type:** `A09` (same in/out domain)  
+**Status:** ⚠️ No data available - all 4 variants returned empty responses
+
+### ⚠️ Variant 31.1: Austria
+```python
+{"documentType": "A09", "out_Domain": "10YAT-APG------L", "in_Domain": "10YAT-APG------L", "periodStart": "202601072200", "periodEnd": "202601082200"}
+```
+
+### ⚠️ Variant 31.2: Belgium
+```python
+{"documentType": "A09", "out_Domain": "10YBE----------2", "in_Domain": "10YBE----------2", "periodStart": "202601072200", "periodEnd": "202601082200"}
+```
+
+### ⚠️ Variant 31.3: Germany-Luxembourg
+```python
+{"documentType": "A09", "out_Domain": "10Y1001A1001A82H", "in_Domain": "10Y1001A1001A82H", "periodStart": "202601072200", "periodEnd": "202601082200"}
+```
+
+### ⚠️ Variant 31.4: France
+```python
+{"documentType": "A09", "out_Domain": "10YFR-RTE------C", "in_Domain": "10YFR-RTE------C", "periodStart": "202601072200", "periodEnd": "202601082200"}
+```
+
+---
+
+## E31: Net Position via Commercial Schedules (12.1.F)
+
+**Document Type:** `A09` (same in/out domain)  
+**Article Reference:** 12.1.F - Net positions from day-ahead market
+
+### Why No Data?
+- This endpoint calculates net position from **aggregated commercial schedules**
+- Many TSOs publish this data through **different document types** or aggregated endpoints
+- The `A09` document type with same in/out domain is rarely used
+
+### Tested Parameters
+- Countries: Austria, Belgium, Germany-Luxembourg, France, Spain, Netherlands
+
+### Recommendation
+Use **Endpoint 22 (Commercial Schedules - A09)** with different in/out domains, or **Endpoint 8 (Net Positions - A25)** for implicit auction results.
+
+---
+
+## User Request
+Fetch scheduled exchanges from Netherlands to Belgium
+
+## Generate the JSON:
+
+# Generator Response
+{
+    "requests": [
+        {
+            "name": "scheduled_exchanges_netherlands_to_belgium",
+            "params": {
+                "documentType": "A09",
+                "out_Domain": "10YNL----------L",
+                "in_Domain": "10YBE----------2",
+                "periodStart": "202601170933",
+                "periodEnd": "202601180933"
+            }
+        }
+    ]
+}
+
+# Parsed Requests
+[
+  {
+    "name": "scheduled_exchanges_netherlands_to_belgium",
+    "params": {
+      "documentType": "A09",
+      "out_Domain": "10YNL----------L",
+      "in_Domain": "10YBE----------2",
+      "periodStart": "202601170933",
+      "periodEnd": "202601180933"
+    }
+  }
+]

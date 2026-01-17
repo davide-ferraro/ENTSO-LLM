@@ -37,6 +37,7 @@ type ChatEntry = {
   routerEndpoints?: RouterEndpoint[];
   requestPayload?: Array<Record<string, unknown>>;
   codeLegend?: CodeLegendEntry[];
+  requestDescriptions?: string[];
   results?: RequestResult[];
   summary?: Record<string, unknown>;
   files?: FileLink[];
@@ -86,8 +87,8 @@ const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   A79: "Unavailability of production units",
   A80: "Unavailability of offshore grid",
   A81: "Unavailability of transmission infrastructure",
-  A85: "Imbalance volume",
-  A86: "Imbalance prices",
+  A85: "Imbalance prices",
+  A86: "Imbalance volumes",
 };
 
 const PROCESS_TYPE_LABELS: Record<string, string> = {
@@ -146,6 +147,15 @@ const PSR_TYPE_LABELS: Record<string, string> = {
 };
 
 const EIC_CODE_LABELS: Record<string, string> = {
+  "10YFI-1--------U": "Finland",
+  "10YSE-1--------K": "Sweden (SE1)",
+  "10Y1001A1001A46L": "Sweden (SE3)",
+  "10YNO-1--------2": "Norway (NO1)",
+  "10YPL-AREA-----S": "Poland",
+  "10YPT-REN------W": "Portugal",
+  "10YRO-TEL------P": "Romania",
+  "10YGR-HTSO-----Y": "Greece",
+  "10YHU-MAVIR----U": "Hungary",
   "10YAT-APG------L": "Austria (APG control area)",
   "10YBE----------2": "Belgium",
   "10YDE-VE-------2": "Germany (50Hertz)",
@@ -350,7 +360,7 @@ const buildCodeLegend = (requests: Array<Record<string, unknown>> | undefined): 
       if (key === "businessType") {
         addLegend(value, BUSINESS_TYPE_LABELS[value]);
       }
-      if (key === "psrType") {
+      if (key.toLowerCase() === "psrtype" || key.toLowerCase() === "productiontype") {
         addLegend(value, PSR_TYPE_LABELS[value]);
       }
       if (key.toLowerCase().includes("domain")) {
@@ -360,6 +370,83 @@ const buildCodeLegend = (requests: Array<Record<string, unknown>> | undefined): 
   });
 
   return Array.from(legend.entries()).map(([code, description]) => ({ code, description }));
+};
+
+const formatEntsoeDate = (value: string | undefined): string | undefined => {
+  if (!value || typeof value !== "string") {
+    return undefined;
+  }
+  // Expect YYYYMMDDHHMM
+  if (!/^\d{12}$/.test(value)) {
+    return value;
+  }
+  const year = Number.parseInt(value.slice(0, 4), 10);
+  const month = Number.parseInt(value.slice(4, 6), 10) - 1;
+  const day = Number.parseInt(value.slice(6, 8), 10);
+  const hour = Number.parseInt(value.slice(8, 10), 10);
+  const minute = Number.parseInt(value.slice(10, 12), 10);
+  const date = new Date(Date.UTC(year, month, day, hour, minute));
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+};
+
+const labelForDomain = (code: string | undefined): string | undefined => {
+  if (!code) return undefined;
+  return EIC_CODE_LABELS[code] ? `${EIC_CODE_LABELS[code]} (${code})` : code;
+};
+
+const getParamIgnoreCase = (params: Record<string, unknown>, key: string): string | undefined => {
+  const direct = params[key];
+  if (typeof direct === "string") return direct;
+  const found = Object.entries(params).find(([k]) => k.toLowerCase() === key.toLowerCase());
+  if (found && typeof found[1] === "string") {
+    return found[1] as string;
+  }
+  return undefined;
+};
+
+const buildRequestDescriptions = (requests: Array<Record<string, unknown>> | undefined): string[] => {
+  if (!requests) {
+    return [];
+  }
+  return requests
+    .map((request) => {
+      const params = request.params as Record<string, unknown> | undefined;
+      if (!params) {
+        return null;
+      }
+      const docType = getParamIgnoreCase(params, "documentType");
+      const docLabel = docType ? DOCUMENT_TYPE_LABELS[docType] ?? docType : undefined;
+      const processType = getParamIgnoreCase(params, "processType");
+      const processLabel = processType ? PROCESS_TYPE_LABELS[processType] ?? processType : undefined;
+      const psrType = getParamIgnoreCase(params, "psrType") ?? getParamIgnoreCase(params, "productionType");
+      const psrLabel = psrType ? PSR_TYPE_LABELS[psrType] ?? psrType : undefined;
+      const domainCode =
+        getParamIgnoreCase(params, "controlArea_Domain") ??
+        getParamIgnoreCase(params, "outBiddingZone_Domain") ??
+        getParamIgnoreCase(params, "in_Domain") ??
+        getParamIgnoreCase(params, "out_Domain");
+      const domainLabel = labelForDomain(typeof domainCode === "string" ? domainCode : undefined);
+      const start = formatEntsoeDate(getParamIgnoreCase(params, "periodStart"));
+      const end = formatEntsoeDate(getParamIgnoreCase(params, "periodEnd"));
+
+      const bits: string[] = [];
+      if (docLabel) bits.push(docLabel);
+      if (domainLabel) bits.push(`Zone: ${domainLabel}`);
+      if (psrLabel) bits.push(`Fuel: ${psrLabel}`);
+      if (start || end) {
+        bits.push(`Period: ${start ?? "?"} → ${end ?? "?"}`);
+      }
+      if (processLabel) {
+        bits.push(`Process: ${processLabel}`);
+      }
+      const name = typeof request.name === "string" ? request.name : undefined;
+      const prefix = name ? `${name}: ` : "";
+      return bits.length > 0 ? `${prefix}${bits.join(" | ")}` : null;
+    })
+    .filter((entry): entry is string => Boolean(entry));
 };
 
 const ResultCard = ({ result }: { result: RequestResult }) => {
@@ -557,6 +644,7 @@ export default function HomePage() {
     }
     if (event === "request" && Array.isArray(data.request_payload)) {
       const requestPayload = data.request_payload as Array<Record<string, unknown>>;
+       const descriptions = buildRequestDescriptions(requestPayload);
       const requestEntry: ChatEntry = {
         id: `${Date.now()}-request`,
         role: "assistant",
@@ -564,6 +652,7 @@ export default function HomePage() {
         kind: "request",
         requestPayload,
         codeLegend: buildCodeLegend(requestPayload),
+        requestDescriptions: descriptions,
       };
       setMessages((prev) => [...prev, requestEntry]);
     }
@@ -726,6 +815,12 @@ export default function HomePage() {
           )}
         </div>
         <div className="sidebar-footer">
+          <button type="button" className="ghost-button">
+            Guide
+          </button>
+          <button type="button" className="ghost-button">
+            Documentation
+          </button>
           <p className="muted small">Model: Gemini</p>
         </div>
       </aside>
@@ -774,6 +869,13 @@ export default function HomePage() {
                   {entry.kind === "request" && (
                     <>
                       <p>{entry.content}</p>
+                      {entry.requestDescriptions && entry.requestDescriptions.length > 0 && (
+                        <div className="request-descriptions">
+                          {entry.requestDescriptions.map((line) => (
+                            <p key={line}>{line}</p>
+                          ))}
+                        </div>
+                      )}
                       {entry.requestPayload && (
                         <div className="request-payload">
                           <pre>{JSON.stringify(entry.requestPayload, null, 2)}</pre>

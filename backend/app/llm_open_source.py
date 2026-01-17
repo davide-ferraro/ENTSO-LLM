@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import uuid
 
 import requests
 
@@ -19,6 +21,7 @@ from backend.app.llm_utils import LLMError, LLMResponse, extract_json, parse_req
 
 DEFAULT_OSS_MODEL = "meta-llama/Meta-Llama-3.1-70B-Instruct"
 DEFAULT_OSS_BASE_URL = "http://localhost:8000/v1"
+TRACE_DIR = Path("logs") / "llm_traces"
 
 
 def _resolve_endpoint(base_url: str) -> str:
@@ -68,24 +71,47 @@ def _call_llm(endpoint: str, headers: dict, messages: List[Dict[str, str]], temp
 
 
 def _parse_router_response(content: str) -> List[str]:
-    """Parse the router response to extract endpoint IDs."""
+    """Parse the router response to extract endpoint/article code(s)."""
     try:
-        # Try to extract JSON from the response
         parsed = extract_json(content)
-        endpoints = parsed.get("endpoints", [])
-        if endpoints:
-            return endpoints
+        # New shape: {"endpoint": "<article>"}
+        if isinstance(parsed, dict):
+            if "endpoint" in parsed and isinstance(parsed["endpoint"], str):
+                return [parsed["endpoint"]]
+            endpoints = parsed.get("endpoints")
+            if isinstance(endpoints, list) and endpoints:
+                return [str(ep) for ep in endpoints]
     except Exception:
         pass
-    
-    # Fallback: look for E## patterns in the text
+
+    # Fallback: look for article codes in parentheses or E-codes
     import re
-    matches = re.findall(r'E\d+', content)
-    if matches:
-        return matches[:2]  # Max 2 endpoints
-    
-    # Default fallback
-    return ["E10"]
+    # Article codes like 6.1.A or 17.1.H
+    article_matches = re.findall(r"\b\d+\.\d+(?:\.[A-Z0-9]+)?\b", content)
+    if article_matches:
+        return [article_matches[0]]
+
+    e_matches = re.findall(r"E\d+", content)
+    if e_matches:
+        return e_matches[:1]
+
+    # Default fallback: no endpoint
+    return []
+
+
+def _write_trace(trace_id: str, suffix: str, body: str) -> Optional[Path]:
+    """Write trace content to disk if DEBUG_LLM_TRACE=1."""
+    if os.getenv("DEBUG_LLM_TRACE") != "1":
+        return None
+    try:
+        TRACE_DIR.mkdir(parents=True, exist_ok=True)
+        path = TRACE_DIR / f"{trace_id}_{suffix}.txt"
+        path.write_text(body, encoding="utf-8")
+        print(f"TRACE: wrote {suffix} trace to {path}")
+        return path
+    except Exception as exc:
+        print(f"⚠️ Failed to write trace {suffix}: {exc}")
+        return None
 
 
 def _build_headers() -> Tuple[str, dict]:
@@ -126,40 +152,102 @@ def get_model_status(timeout: float = 300) -> Optional[bool]:
         return None
 
 
-def router_pass(message: str) -> List[str]:
+def router_pass(message: str, trace_id: Optional[str] = None) -> List[str]:
     endpoint, headers = _build_headers()
     print("🔹 Pass 1: Routing to select endpoint...")
 
+    trace_id = trace_id or str(uuid.uuid4())
     router_context = build_router_context(message)
+    if os.getenv("DEBUG_ROUTER_CONTEXT") == "1":
+        debug_path = Path("router_prompt_content.txt")
+        try:
+            debug_path.write_text(router_context, encoding="utf-8")
+            print(f"Router context written to {debug_path}")
+        except Exception as exc:
+            print(f"⚠️ Failed to write router context to file: {exc}")
     router_messages = [
         {"role": "system", "content": router_context},
         {"role": "user", "content": message},
     ]
 
-    router_response = _call_llm(endpoint, headers, router_messages, temperature=0.1)
+    router_response = _call_llm(endpoint, headers, router_messages, temperature=0.0)
     print(f"📍 Router response: {router_response[:200]}...")
 
     selected_endpoints = _parse_router_response(router_response)
     print(f"✅ Selected endpoints: {selected_endpoints}")
+    _write_trace(
+        trace_id,
+        "router",
+        "\n".join(
+            [
+                "# Router Prompt",
+                router_context,
+                "",
+                "# Router Response",
+                router_response,
+                "",
+                f"# Parsed Endpoints\n{selected_endpoints}",
+            ]
+        ),
+    )
+    if not selected_endpoints:
+        raise LLMError("Router did not return a valid endpoint. Please try again.")
     return selected_endpoints
 
 
-def generator_pass(message: str, selected_endpoints: List[str]) -> Tuple[List[Dict[str, Any]], str]:
+def generator_pass(message: str, selected_endpoints: List[str], trace_id: Optional[str] = None) -> Tuple[List[Dict[str, Any]], str]:
     endpoint, headers = _build_headers()
     print("🔹 Pass 2: Generating JSON request...")
 
+    trace_id = trace_id or str(uuid.uuid4())
     generator_context = build_generator_context(message, selected_endpoints)
     generator_messages = [
         {"role": "system", "content": generator_context},
         {"role": "user", "content": message},
     ]
 
-    generator_response = _call_llm(endpoint, headers, generator_messages, temperature=0.1)
-    print(f"📥 Generator response:\n{generator_response}\n")
-
-    parsed = extract_json(generator_response)
-    requests_list = parse_requests(parsed)
-    return requests_list, generator_response
+    generator_response = None
+    try:
+        generator_response = _call_llm(endpoint, headers, generator_messages, temperature=0.1)
+        print(f"📥 Generator response:\n{generator_response}\n")
+        parsed = extract_json(generator_response)
+        requests_list = parse_requests(parsed)
+        _write_trace(
+            trace_id,
+            "generator",
+            "\n".join(
+                [
+                    "# Generator Prompt",
+                    generator_context,
+                    "",
+                    "# Generator Response",
+                    generator_response,
+                    "",
+                    f"# Parsed Requests\n{json.dumps(requests_list, indent=2)}",
+                ]
+            ),
+        )
+        return requests_list, generator_response
+    except Exception as exc:
+        # Always write the trace, even if parsing failed.
+        _write_trace(
+            trace_id,
+            "generator",
+            "\n".join(
+                [
+                    "# Generator Prompt",
+                    generator_context,
+                    "",
+                    "# Generator Response",
+                    generator_response or "<no response>",
+                    "",
+                    f"# Error\n{exc}",
+                ]
+            ),
+        )
+        if isinstance(exc, LLMError):
+            raise
+        raise LLMError(str(exc))
 
 
 def generate_requests(message: str, history: List[Dict[str, str]] | None = None) -> LLMResponse:

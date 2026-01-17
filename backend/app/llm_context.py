@@ -18,9 +18,11 @@ DOCS_ROOT = Path(__file__).resolve().parents[2] / "docs"
 # Prompt files
 ROUTER_PROMPT = DOCS_ROOT / "prompts" / "router_prompt.md"
 GENERATOR_PROMPT = DOCS_ROOT / "prompts" / "generator_prompt.md"
-EXAMPLES_MENU = DOCS_ROOT / "examples" / "examples_menu.md"
+# Router now uses the lighter menu to reduce prompt size.
+EXAMPLES_MENU = DOCS_ROOT / "examples" / "examples_menu_1.md"
 EXAMPLES_DIR = DOCS_ROOT / "examples" / "endpoints"
-API_DOCS_DIR = DOCS_ROOT / "api" / "endpoints_doc"
+TRANSPARENCY_DOC = DOCS_ROOT / "api" / "ENTSOE_Transparency_API_Documentation.md"
+REQUEST_EXAMPLES = DOCS_ROOT / "examples" / "request_examples.md"
 
 
 # ============================================================================
@@ -56,66 +58,6 @@ COMMON_EIC_CODES = """
 | Switzerland | 10YCH-SWISSGRIDZ |
 """
 
-# Mapping from Endpoint ID to documentation filename
-ENDPOINT_TO_DOC = {
-    "E01": "total_nominated_capacity.md",
-    "E02": "implicit_allocations_offered_transfer_capacity.md",
-    "E03": "transfer_capacities_with_third_countries.md",
-    "E04": "total_capacity_already_allocated.md",
-    "E05": "explicit_allocations_offered_transfer_capacity.md",
-    "E06": "explicit_allocations_use_of_transfer_capacity.md",
-    "E07": "explicit_allocations_auction_revenue.md",
-    "E08": "implicit_auction_net_positions.md",
-    "E09": "continuous_allocations_offered_transfer_capacity.md",
-    "E10": "energy_prices.md",
-    "E11": "actual_total_load_6_1_a_get_method.md",
-    "E12": "day_ahead_total_load_forecast.md",
-    "E13": "week_ahead_total_load_forecast.md",
-    "E14": "installed_capacity_per_production_type.md",
-    "E15": "year_ahead_total_load_forecast.md",
-    "E16": "actual_generation_per_generation_unit.md",
-    "E17": "actual_generation_per_production_type.md",
-    "E18": "generation_forecast_day_ahead.md",
-    "E19": "generation_forecasts_for_wind_and_solar.md",
-    "E20": "cross_border_physical_flows.md",
-    "E21": "forecasted_transfer_capacities.md",
-    "E22": "commercial_schedules.md",
-    "E23": "cross_border_capacity_of_dc_links_intraday_transfer_limits.md",
-    "E24": "unavailability_of_generation_units.md",
-    "E25": "unavailability_of_transmission_infrastructure.md",
-    "E26": "imbalance_prices.md",
-    "E27": "total_imbalance_volumes.md",
-    "E28": "current_balancing_state_area_control_error.md",
-    "E29": "fcr_total_capacity.md",
-    "E30": "prices_of_activated_balancing_energy.md",
-    "E37": "unavailability_of_production_units.md",
-    "E41": "cross_border_marginal_prices.md",
-    "E43": "aggregated_balancing_energy_bids.md",
-    "E44": "volumes_and_prices_of_contracted_reserves.md",
-    "E45": "procured_balancing_capacity.md",
-    "E46": "energy_prices.md",
-    "E47": "energy_prices.md",
-    "E48": "imbalance_prices.md",
-    "E49": "cross_border_physical_flows.md",
-    "E50": "congestion_income.md",
-    "E51": "actual_total_load_6_1_a_get_method.md",
-    "E52": "actual_generation_per_production_type.md",
-    "E53": "generation_forecasts_for_wind_and_solar.md",
-    "E54": "forecasted_transfer_capacities.md",
-    "E55": "total_imbalance_volumes.md",
-    "E56": "energy_prices.md",
-    "E57": "energy_prices.md",
-    "E58": "energy_prices.md",
-    "E59": "cross_border_physical_flows.md",
-    "E60": "cross_border_physical_flows.md",
-    "E61": "installed_capacity_per_production_type.md",
-    "E62": "unavailability_of_generation_units.md",
-    "E63": "unavailability_of_transmission_infrastructure.md",
-    "E64": "current_balancing_state_area_control_error.md",
-    "E65": "prices_of_activated_balancing_energy.md",
-}
-
-
 # ============================================================================
 # PASS 1: ROUTER
 # ============================================================================
@@ -141,37 +83,88 @@ def load_endpoint_titles() -> Dict[str, str]:
     """Load endpoint titles from the examples menu."""
     menu = _load_examples_menu()
     titles: Dict[str, str] = {}
+    article_map: Dict[str, str] = {}
     for line in menu.splitlines():
         line = line.strip()
         if not line.startswith("## "):
             continue
-        # Format: ## E11 — Actual Total Load (6.1.A)
-        match = re.match(r"^##\s+(E\d+)\s+(?:—|-)\s+(.+)$", line)
-        if match:
-            code, title = match.groups()
+        # Supported formats:
+        # - ## E11 — Actual Total Load (6.1.A)
+        # - ## 6.1.A — Actual Total Load
+        # - ## Endpoint 11: Actual Total Load (6.1.A)
+        code = None
+        article = None
+        title = None
+
+        # Try E-codes at start
+        match_e = re.match(r"^##\s+(E\d+)\s+(?:—|-)\s+(.+)$", line)
+        if match_e:
+            code, title = match_e.groups()
+        else:
+            # Try article code at start
+            match_article = re.match(r"^##\s+(\d+\.\d+(?:\.[A-Z0-9]+)?)\s+(?:—|-)\s+(.+)$", line)
+            if match_article:
+                code, title = match_article.groups()
+                article = code
+        # If still not found, search for article code in parentheses
+        if not code:
+            paren_match = re.search(r"\((\d+\.\d+(?:\.[A-Z0-9]+)?)\)", line)
+            if paren_match:
+                article = paren_match.group(1)
+                code = article
+                title = re.sub(r"\s*\(.*?\)", "", line.replace("##", "")).strip()
+
+        if code and title:
             titles[code] = title.strip()
+        if code and article:
+            article_map[code] = article
+            article_map[article] = article
     return titles
 
 
-def build_router_context(user_query: str) -> str:
+@lru_cache(maxsize=1)
+def load_endpoint_article_map() -> Dict[str, str]:
+    """Map E-codes to article codes (and identity for article codes)."""
+    menu = _load_examples_menu()
+    mapping: Dict[str, str] = {}
+    for line in menu.splitlines():
+        line = line.strip()
+        if not line.startswith("## "):
+            continue
+        # Capture E-code and article code in parentheses
+        e_match = re.match(r"^##\s+(E\d+)", line)
+        paren_match = re.search(r"\((\d+\.\d+(?:\.[A-Z0-9]+)?)\)", line)
+        if e_match and paren_match:
+            e_code = e_match.group(1)
+            article = paren_match.group(1)
+            mapping[e_code] = article
+            mapping[article] = article
+        else:
+            # If only article is present, map to itself
+            match_article = re.match(r"^##\s+(\d+\.\d+(?:\.[A-Z0-9]+)?)", line)
+            if match_article:
+                article = match_article.group(1)
+                mapping[article] = article
+    return mapping
+
+
+def build_router_context(user_query: str, filtered_menu: str | None = None) -> str:
     """
     Build context for Pass 1: Router.
     
     The LLM will see:
     1. Router prompt (instructions)
     2. Examples menu (all endpoints)
-    3. User query
     
     The LLM should return: {"endpoints": ["E10"]}
     """
     router_prompt = _load_router_prompt()
-    examples_menu = _load_examples_menu()
+    examples_menu = filtered_menu if filtered_menu is not None else _load_examples_menu()
     
     parts = [
         router_prompt,
         "## Endpoint Menu\n" + examples_menu,
-        f"## User Request\n{user_query}",
-        "## Your Response (JSON only):"
+        "## Output\nReturn only JSON: { \"endpoint\": \"<ARTICLE_CODE>\" }"
     ]
     
     return "\n\n".join(parts)
@@ -189,33 +182,69 @@ def _load_generator_prompt() -> str:
     return "Generate the ENTSO-E API request as JSON."
 
 
+@lru_cache(maxsize=1)
+def _load_transparency_doc() -> str:
+    if TRANSPARENCY_DOC.exists():
+        return TRANSPARENCY_DOC.read_text(encoding="utf-8")
+    return ""
+
+
+@lru_cache(maxsize=1)
+def _load_request_examples() -> str:
+    if REQUEST_EXAMPLES.exists():
+        return REQUEST_EXAMPLES.read_text(encoding="utf-8")
+    return ""
+
+
+def _extract_sections_by_article(doc_text: str, article_codes: List[str], heading_prefix: str) -> str:
+    """Extract sections with headings containing any of the article codes."""
+    if not doc_text or not article_codes:
+        return ""
+
+    lines = doc_text.splitlines()
+    matches = []
+    for idx, line in enumerate(lines):
+        if line.startswith(heading_prefix):
+            for code in article_codes:
+                # match "(<code>...)" to allow combined headings like (16.1.B&C)
+                import re
+                pattern = r"\(" + re.escape(code) + r"[^)]*\)"
+                if re.search(pattern, line):
+                    matches.append(idx)
+                    break
+
+    if not matches:
+        return ""
+
+    sections: List[str] = []
+    for start_idx in matches:
+        end_idx = len(lines)
+        for j in range(start_idx + 1, len(lines)):
+            if lines[j].startswith(heading_prefix):
+                end_idx = j
+                break
+        sections.append("\n".join(lines[start_idx:end_idx]).strip())
+
+    return "\n\n".join(sections)
+
+
+def _load_doc_sections_for_articles(article_codes: List[str]) -> str:
+    doc_text = _load_transparency_doc()
+    return _extract_sections_by_article(doc_text, article_codes, "#### ")
+
+
+def _load_example_sections_for_articles(article_codes: List[str]) -> str:
+    examples_text = _load_request_examples()
+    return _extract_sections_by_article(examples_text, article_codes, "## ")
+
+
 def _load_endpoint_examples(endpoint_ids: List[str]) -> str:
-    """Load the full example files for selected endpoints."""
+    """Load the full example files for selected endpoints (legacy E-based; optional)."""
     content_parts = []
-    
     for eid in endpoint_ids:
         example_file = EXAMPLES_DIR / f"{eid}.md"
         if example_file.exists():
             content_parts.append(f"## Examples for {eid}\n" + example_file.read_text(encoding="utf-8"))
-    
-    if content_parts:
-        return "\n\n".join(content_parts)
-    return ""
-
-
-def _load_endpoint_documentation(endpoint_ids: List[str]) -> str:
-    """Load matching API documentation files for selected endpoints."""
-    content_parts = []
-    seen_docs = set()
-    
-    for eid in endpoint_ids:
-        doc_filename = ENDPOINT_TO_DOC.get(eid)
-        if doc_filename and doc_filename not in seen_docs:
-            doc_file = API_DOCS_DIR / doc_filename
-            if doc_file.exists():
-                content_parts.append(f"### TECHNICAL DOC: {doc_filename}\n" + doc_file.read_text(encoding="utf-8"))
-                seen_docs.add(doc_filename)
-                
     if content_parts:
         return "\n\n".join(content_parts)
     return ""
@@ -229,13 +258,17 @@ def build_generator_context(user_query: str, endpoint_ids: List[str]) -> str:
     1. Generator prompt (instructions + output format)
     2. Current UTC time
     3. EIC codes reference
-    4. Selected endpoint examples
-    5. Selected technical documentation
-    6. User query
+    4. Selected technical documentation (article-based)
+    5. Selected request examples (article-based)
+    6. Selected endpoint examples (legacy E-based, if present)
+    7. User query
     """
     generator_prompt = _load_generator_prompt()
+    # Treat endpoint_ids as article codes for extraction, but keep E-based examples if available.
+    article_codes = endpoint_ids
     examples = _load_endpoint_examples(endpoint_ids)
-    technical_docs = _load_endpoint_documentation(endpoint_ids)
+    technical_docs = _load_doc_sections_for_articles(article_codes)
+    request_examples = _load_example_sections_for_articles(article_codes)
     
     # Current time
     now = datetime.now(timezone.utc)
@@ -249,6 +282,9 @@ def build_generator_context(user_query: str, endpoint_ids: List[str]) -> str:
     
     if technical_docs:
         parts.append(technical_docs)
+
+    if request_examples:
+        parts.append(request_examples)
         
     if examples:
         parts.append(examples)

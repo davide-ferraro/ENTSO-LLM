@@ -5,10 +5,10 @@ import os
 import modal
 from fastapi import Request
 
-MODEL_ID = os.getenv("VLLM_MODEL_ID", "Qwen/Qwen2.5-3B-Instruct")
+MODEL_ID = os.getenv("VLLM_MODEL_ID", "Qwen/Qwen2.5-32B-Instruct")
 MODEL_REVISION = "main"
 # Modal deprecation: prefer the string GPU selector.
-GPU_CONFIG = os.getenv("MODAL_GPU", "A100-40GB")
+GPU_CONFIG = os.getenv("MODAL_GPU", "A100-80GB")
 
 vllm_image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -51,8 +51,9 @@ class VLLMServer:
             cache_dir=CACHE_DIR,
         )
 
-        requested_len = int(os.getenv("VLLM_MAX_MODEL_LEN", "32768"))
-        # Qwen2.5-3B-Instruct derives 32k max from config; keep a safe default.
+        requested_len = int(os.getenv("VLLM_MAX_MODEL_LEN", "14000"))
+        # Qwen2.5-32B-Instruct supports up to 32k, but large KV size on 32B limits practical length.
+        # Default to 14k unless explicitly overridden.
         if requested_len > 32768 and os.getenv("VLLM_ALLOW_LONG_MAX_MODEL_LEN") != "1":
             print(
                 f"⚠️ VLLM_MAX_MODEL_LEN={requested_len} exceeds model config; clamping to 32768. "
@@ -65,7 +66,7 @@ class VLLMServer:
             revision=MODEL_REVISION,
             tensor_parallel_size=1,
             max_model_len=requested_len,
-            gpu_memory_utilization=float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", "0.90")),
+            gpu_memory_utilization=float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", "1.0")),
             dtype=os.getenv("VLLM_DTYPE", "auto"),
             enforce_eager=False,
             enable_prefix_caching=False,
