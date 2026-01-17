@@ -16,6 +16,7 @@ body {
     radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.15) 1px, transparent 0) 0 0 / 22px 22px,
     #f7f7fb;
   color: #111827;
+  background-attachment: fixed, fixed, fixed;
 }
 
 .workspace {
@@ -155,6 +156,7 @@ body {
   color: #111827;
   cursor: pointer;
   text-align: left;
+  transition: background 120ms ease, border-color 120ms ease, transform 100ms ease;
 }
 
 .history-index {
@@ -173,6 +175,30 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  color: inherit;
+}
+
+.history-item:hover {
+  background: rgba(17, 24, 39, 0.12);
+  border-color: rgba(17, 24, 39, 0.18);
+  transform: translateY(-1px);
+}
+
+.history-text.full {
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.history-list {
+  max-height: 460px;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 4px;
+  background: rgba(241, 219, 255, 0.75);
+  border: 1px solid rgba(17, 24, 39, 0.05);
+  border-radius: 12px;
+  padding: 8px;
 }
 
 .main {
@@ -223,7 +249,8 @@ body {
 
 .chat-message.user {
   align-self: flex-end;
-  background: #e7f0ff;
+  background: rgba(225, 173, 255, 0.16);
+  border: 1px solid rgba(225, 173, 255, 0.24);
 }
 
 .chat-message.status {

@@ -230,7 +230,7 @@ const extractTimeseriesUnit = (data: unknown): string => {
   return "";
 };
 
-const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+const Plot = dynamic(() => import("react-plotly.js"), { ssr: false }) as any;
 
 const ChartMessage = ({ source }: { source: ChartSource }) => {
   const [csvRaw, setCsvRaw] = useState<string>("");
@@ -644,7 +644,7 @@ export default function HomePage() {
     }
     if (event === "request" && Array.isArray(data.request_payload)) {
       const requestPayload = data.request_payload as Array<Record<string, unknown>>;
-       const descriptions = buildRequestDescriptions(requestPayload);
+      const descriptions = buildRequestDescriptions(requestPayload);
       const requestEntry: ChatEntry = {
         id: `${Date.now()}-request`,
         role: "assistant",
@@ -783,6 +783,15 @@ export default function HomePage() {
     }
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (status !== "loading") {
+        void handleSend();
+      }
+    }
+  };
+
   return (
     <div className="workspace">
       <aside className="sidebar">
@@ -797,21 +806,23 @@ export default function HomePage() {
         </button>
         <div className="sidebar-section">
           <p className="section-title">Recent prompts</p>
-          {userHistory.length === 0 ? (
-            <p className="muted small">No messages yet.</p>
-          ) : (
-            userHistory.map((item, index) => (
-              <button
-                key={item.id}
-                type="button"
-                className="history-item"
-                onClick={() => handleScrollToMessage(item.id)}
-              >
-                <span className="history-index">{index + 1}</span>
-                <span className="history-text">{item.label}</span>
-              </button>
-            ))
-          )}
+          <div className="history-list">
+            {userHistory.length === 0 ? (
+              <p className="muted small">No messages yet.</p>
+            ) : (
+              userHistory.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="history-item"
+                  onClick={() => handleScrollToMessage(item.id)}
+                >
+                  <span className="history-index">{index + 1}</span>
+                  <span className="history-text full">{item.label}</span>
+                </button>
+              ))
+            )}
+          </div>
         </div>
         <div className="sidebar-footer">
           <button type="button" className="ghost-button">
@@ -923,9 +934,10 @@ export default function HomePage() {
           <div className="composer-bar">
             <span className="composer-icon">🔎</span>
             <textarea
-              placeholder="Ask anything"
+              placeholder="Ask any data from ENTSO-E"
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onKeyDown={handleKeyDown}
               rows={1}
             />
             <button type="button" className="send-button" onClick={handleSend} disabled={status === "loading"}>
